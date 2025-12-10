@@ -3,7 +3,7 @@ name: Build and Push ManyACG Lite Image
 on:
   push:
     branches: ["main"]
-  workflow_dispatch:    # 允许手动运行
+  workflow_dispatch:
 
 jobs:
   build:
@@ -14,17 +14,15 @@ jobs:
       packages: write
 
     env:
-      VERSION: "v1.2.0"   # ManyACG 版本号（可改）
-      USER: ${{ github.repository_owner }}
-      IMAGE_BASE: ghcr.io/${{ env.USER || tolower }}/manyacg
+      VERSION: "v1.2.0"
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Convert USER to lowercase
-        id: lower
-        run: echo "USER_LOWER=$(echo $USER | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+      # 将 GitHub 用户名转换为小写
+      - name: Convert repository_owner to lowercase
+        run: echo "USER_LOWER=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Download ManyACG binary
         run: |
@@ -42,7 +40,7 @@ jobs:
           username: ${{ env.USER_LOWER }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push LITE image (no ffmpeg)
+      - name: Build and push LITE image
         uses: docker/build-push-action@v5
         with:
           context: .
