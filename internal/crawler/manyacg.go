@@ -1,13 +1,9 @@
 package crawler
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"image"
-	_ "image/jpeg"
-	_ "image/png"
 	"log"
 	"my-bot-go/internal/config"
 	"my-bot-go/internal/database"
@@ -21,14 +17,15 @@ import (
 // ManyACGResponse 对应 https://manyacg.top/api/v1/artwork/random 的返回结构
 type ManyACGResponse struct {
 	Data []struct {
-		// ✅ 修正：ID 改为 string 类型，因为 API 返回的是 "67838d..." 这种字符串
-		ID       string `json:"id"` 
+		ID       string `json:"id"` // JSON返回的是字符串ID
 		Title    string `json:"title"`
 		Artist   struct {
 			Name string `json:"name"`
 		} `json:"artist"`
 		Pictures []struct {
 			Regular string `json:"regular"`
+			Width   int    `json:"width"`  // ✅ 直接读取 API 提供的宽高
+			Height  int    `json:"height"` // ✅ 直接读取 API 提供的宽高
 		} `json:"pictures"`
 		Tags []string `json:"tags"`
 		R18  bool     `json:"r18"`
@@ -46,78 +43,76 @@ func StartManyACG(ctx context.Context, cfg *config.Config, db *database.D1Client
 		case <-ctx.Done():
 			return
 		default:
-			log.Println("🎲 Checking ManyACG (Random)...")
+			log.Println("🎲 Starting Batch ManyACG (10 Pics)...")
 
-			url := "https://manyacg.top/api/v1/artwork/random"
+			// ✅ 批量抽 10 次
+			for i := 0; i < 10; i++ {
+				url := "https://manyacg.top/api/v1/artwork/random"
 
-			resp, err := client.R().Get(url)
-			if err != nil {
-				log.Printf("ManyACG API Error: %v", err)
-				time.Sleep(3 * time.Minute)
-				continue
-			}
-
-			var result ManyACGResponse
-			if err := json.Unmarshal(resp.Body(), &result); err != nil {
-				log.Printf("ManyACG JSON Error: %v", err)
-				time.Sleep(1 * time.Minute)
-				continue
-			}
-
-			for _, item := range result.Data {
-				// ✅ 修正：因为 ID 是 string，这里格式化用 %s
-				pid := fmt.Sprintf("manyacg_%s", item.ID)
-
-				if db.History[pid] {
-					// ✅ 修正：日志里 ID 也是 string
-					log.Printf("⏭️ ManyACG %s 已存在，跳过", item.ID)
-					continue
-				}
-
-				if len(item.Pictures) == 0 {
-					continue
-				}
-				imgURL := item.Pictures[0].Regular
-
-				// ✅ 修正：日志里 ID 也是 string
-				log.Printf("⬇️ Downloading ManyACG: %s", item.ID)
-
-				imgResp, err := client.R().Get(imgURL)
+				resp, err := client.R().Get(url)
 				if err != nil {
-					log.Printf("Failed to download image: %v", err)
+					log.Printf("ManyACG API Error: %v", err)
 					continue
 				}
 
-				width, height := 0, 0
-				if cfg, _, err := image.DecodeConfig(bytes.NewReader(imgResp.Body())); err == nil {
-					width = cfg.Width
-					height = cfg.Height
-				} else {
-					// ✅ 修正：日志里 ID 也是 string
-					log.Printf("⚠️ 无法解析图片宽高 (ID: %s): %v", item.ID, err)
+				var result ManyACGResponse
+				if err := json.Unmarshal(resp.Body(), &result); err != nil {
+					log.Printf("ManyACG JSON Error: %v", err)
+					continue
 				}
 
-				tags := item.Tags
-				if item.R18 {
-					tags = append(tags, "R-18")
+				for _, item := range result.Data {
+					// 构造去重 ID，因为 ID 是字符串，直接用
+					pid := fmt.Sprintf("manyacg_%s", item.ID)
+
+					if db.History[pid] {
+						// log.Printf("⏭️ ManyACG %s 已存在，跳过", item.ID)
+						continue
+					}
+
+					if len(item.Pictures) == 0 {
+						continue
+					}
+					
+					pic := item.Pictures[0] // 拿第一张图
+					imgURL := pic.Regular
+					
+					// ✅ 直接从 JSON 获取宽高
+					width := pic.Width
+					height := pic.Height
+
+					log.Printf("⬇️ Downloading ManyACG: %s (%dx%d)", item.Title, width, height)
+
+					// 下载图片 (仅为了发送，不需要再分析了)
+					imgResp, err := client.R().Get(imgURL)
+					if err != nil {
+						log.Printf("Failed to download image: %v", err)
+						continue
+					}
+
+					// 构造文案
+					tags := item.Tags
+					if item.R18 {
+						tags = append(tags, "R-18")
+					}
+					tagsStr := strings.Join(tags, " ")
+					caption := fmt.Sprintf("MtcACG: %s\nArtist: %s\nTags: #%s",
+						item.Title,
+						item.Artist.Name,
+						strings.ReplaceAll(tagsStr, " ", " #"),
+					)
+
+					botHandler.ProcessAndSend(ctx, imgResp.Body(), pid, tagsStr, caption, "manyacg", width, height)
+
+					db.PushHistory()
+					time.Sleep(3 * time.Second)
 				}
-				tagsStr := strings.Join(tags, " ")
-				formattedTags := strings.ReplaceAll(tagsStr, " ", " #")
-
-				caption := fmt.Sprintf("MtcACG: %s\nArtist: %s\nTags: #%s",
-					item.Title,
-					item.Artist.Name,
-					formattedTags,
-				)
-
-				botHandler.ProcessAndSend(ctx, imgResp.Body(), pid, tagsStr, caption, "manyacg", width, height)
-
-				db.PushHistory()
-
-				time.Sleep(3 * time.Second)
+				
+				// 每次 API 请求间隔 1 秒
+				time.Sleep(1 * time.Second)
 			}
 
-			log.Println("😴 ManyACG Done. Sleeping 5m...")
+			log.Println("😴 ManyACG Batch Done. Sleeping 5m...")
 			time.Sleep(5 * time.Minute)
 		}
 	}
