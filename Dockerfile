@@ -3,28 +3,29 @@ FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
-# ✅ 这一步是关键：安装 git 和 ca-certificates 证书
+# 安装 git 和证书（下载依赖必须）
 RUN apk add --no-cache git ca-certificates
 
-# 如果你在国内或者GitHub Action有时候慢，加上这个代理（可选，建议加上）
+# 设置国内代理，加速下载（可选，但在国内或CI环境非常推荐）
 ENV GOPROXY=https://goproxy.cn,direct
 
+# 1. 复制 go.mod
 COPY go.mod ./
-# 最好把 go.sum 加上，如果没有就算了
-# COPY go.sum ./ 
 
-RUN go mod download
+# 🔥 核心修复：创建一个空的 go.sum，然后用 tidy 自动补全
+RUN touch go.sum
+RUN go mod tidy
 
+# 2. 复制剩下的代码
 COPY . .
 
-# 编译
+# 3. 编译
 RUN CGO_ENABLED=0 GOOS=linux go build -o bot ./cmd/bot
 
 # Run Stage
 FROM alpine:latest
 
 WORKDIR /root/
-# 运行时镜像也要装证书，不然 HTTPS 请求会报错
 RUN apk --no-cache add ca-certificates tzdata
 
 COPY --from=builder /app/bot .
