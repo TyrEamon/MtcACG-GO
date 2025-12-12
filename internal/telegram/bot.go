@@ -47,6 +47,12 @@ func (h *BotHandler) Start(ctx context.Context) {
 
 // ProcessAndSend 增加了 width, height 参数
 func (h *BotHandler) ProcessAndSend(ctx context.Context, imgData []byte, postID, tags, caption, source string, width, height int) {
+	// 【新增步骤 1】先检查内存历史，如果有了就直接跳过
+	if h.DB.History[postID] {
+		log.Printf("⏭️ Skip %s: already in history", postID)
+		return
+	}
+
 	params := &bot.SendPhotoParams{
 		ChatID:  h.Cfg.ChannelID,
 		Photo:   &models.InputFileUpload{Filename: source + ".jpg", Data: bytes.NewReader(imgData)},
@@ -54,6 +60,7 @@ func (h *BotHandler) ProcessAndSend(ctx context.Context, imgData []byte, postID,
 	}
 
 	msg, err := h.API.SendPhoto(ctx, params)
+    // ... (后面保持不变)
 	if err != nil {
 		log.Printf("❌ Telegram Send Failed [%s]: %v", postID, err)
 		return
@@ -69,6 +76,12 @@ func (h *BotHandler) ProcessAndSend(ctx context.Context, imgData []byte, postID,
 		log.Printf("❌ D1 Save Failed: %v", err)
 	} else {
 		log.Printf("✅ Saved: %s (%dx%d)", postID, width, height)
+	}
+}
+
+func (h *BotHandler) PushHistoryToCloud() {
+	if h.DB != nil {
+		h.DB.PushHistory()
 	}
 }
 
