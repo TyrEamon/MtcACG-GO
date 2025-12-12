@@ -33,11 +33,15 @@ func StartDanbooru(ctx context.Context, cfg *config.Config, db *database.D1Clien
 	}
 
 	client := resty.New().
-		SetTimeout(30 * time.Second).
+		SetTimeout(60 * time.Second). // 超时设长一点
 		SetRetryCount(2)
 
-	// ✅ 新增：伪装 User-Agent
-    client.SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	// ✅ 设置 API 认证 (绕过 Cloudflare)
+	client.SetBasicAuth("MTCacg", "J6fvDmaswPhggJEBuqZ7i2p5")
+	
+	// 设置 User-Agent 和 Accept 头
+	client.SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	client.SetHeader("Accept", "application/json")
 
 	for {
 		select {
@@ -47,6 +51,8 @@ func StartDanbooru(ctx context.Context, cfg *config.Config, db *database.D1Clien
 			log.Println("🔍 Checking Danbooru...")
 
 			// 构造查询 URL
+			// 注意：如果 tags 包含特殊字符，最好用 url.QueryEscape(cfg.DanbooruTags)
+			// 但如果你只有简单的 tags (如 genshin_impact)，这样也没问题
 			url := fmt.Sprintf(
 				"https://danbooru.donmai.us/posts.json?limit=%d&tags=%s",
 				cfg.DanbooruLimit,
@@ -56,6 +62,13 @@ func StartDanbooru(ctx context.Context, cfg *config.Config, db *database.D1Clien
 			resp, err := client.R().Get(url)
 			if err != nil {
 				log.Printf("Danbooru Error: %v", err)
+				time.Sleep(1 * time.Minute)
+				continue
+			}
+
+			// 如果遇到非 200 状态码 (比如 403 Forbidden)，打印 Body 方便调试
+			if resp.StatusCode() != 200 {
+				log.Printf("⚠️ Danbooru API Status: %d | Body: %s", resp.StatusCode(), string(resp.Body()))
 				time.Sleep(1 * time.Minute)
 				continue
 			}
@@ -74,8 +87,6 @@ func StartDanbooru(ctx context.Context, cfg *config.Config, db *database.D1Clien
 				}
 				ext := strings.ToLower(post.FileExt)
 				if ext == "mp4" || ext == "webm" || ext == "zip" || ext == "swf" {
-					// 建议：如果你不想让日志一直刷 "skip"，可以把这些视频也加入 history 屏蔽掉
-					// db.History[fmt.Sprintf("danbooru_%d", post.ID)] = true
 					continue
 				}
 
@@ -84,7 +95,7 @@ func StartDanbooru(ctx context.Context, cfg *config.Config, db *database.D1Clien
 					continue
 				}
 
-				// ⬇️ 这里补回了下载逻辑
+				// 下载图片
 				imgURL := post.FileURL
 				log.Printf("⬇️ Downloading Danbooru: %d", post.ID)
 
@@ -113,7 +124,7 @@ func StartDanbooru(ctx context.Context, cfg *config.Config, db *database.D1Clien
 					post.ImageHeight,
 				)
 
-				// ✅ 【关键修正】每发完一张图，立刻同步到云端
+				// 每发完一张图，立刻同步到云端
 				db.PushHistory()
 
 				time.Sleep(3 * time.Second)
