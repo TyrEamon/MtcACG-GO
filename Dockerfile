@@ -3,21 +3,19 @@ FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
-# 安装 git 和证书（下载依赖必须）
+# 安装 git 和证书
 RUN apk add --no-cache git ca-certificates
 
-# 设置国内代理，加速下载（可选，但在国内或CI环境非常推荐）
+# 设置代理
 ENV GOPROXY=https://goproxy.cn,direct
 
-# 1. 复制 go.mod
-COPY go.mod ./
+# 1. 这一步直接把所有源代码（包括 go.mod）全部拷进去！
+# 不要分步拷了，分步拷虽然能利用缓存，但在这种初次构建且没有 go.sum 的情况下会出问题。
+COPY . .
 
-# 🔥 核心修复：创建一个空的 go.sum，然后用 tidy 自动补全
+# 2. 现在有了源代码，go mod tidy 才能正确分析出你需要哪些包
 RUN touch go.sum
 RUN go mod tidy
-
-# 2. 复制剩下的代码
-COPY . .
 
 # 3. 编译
 RUN CGO_ENABLED=0 GOOS=linux go build -o bot ./cmd/bot
