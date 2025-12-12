@@ -29,6 +29,10 @@ type Config struct {
 
 	// ✨ 新增：Kemono 支持
 	KemonoCreators []KemonoCreator
+	
+    // ✨ 新增：Danbooru 支持
+    DanbooruTags  string
+    DanbooruLimit int
 }
 
 func Load() *Config {
