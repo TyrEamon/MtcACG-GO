@@ -138,7 +138,7 @@ func StartDanbooru(ctx context.Context, cfg *config.Config, db *database.D1Clien
 			}
 
 			log.Println("😴 Danbooru Done. Sleeping 10m...")
-			time.Sleep(10 * time.Minute)
+			time.Sleep(60 * time.Minute)
 		}
 	}
 }
