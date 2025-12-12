@@ -94,7 +94,6 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 					// 基础去重 (只要发过第一张，就算这个ID处理过了)
 					mainPid := fmt.Sprintf("pixiv_%d_p0", id)
 					if db.History[mainPid] {
-						// log.Printf("⏭️ Pixiv %d 已存在，跳过", id) 
 						continue
 					}
 
@@ -109,10 +108,9 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 						continue
 					}
 					
-					// 如果是动图 (IllustType == 2)，暂时跳过，或者你可以以后加动图逻辑
+					// 如果是动图 (IllustType == 2)，暂时跳过
 					if detail.Body.IllustType == 2 {
 						log.Printf("⚠️ Skip Ugoira (GIF): %d", id)
-						// 标记为已处理，防止反复检查
 						db.History[mainPid] = true
 						continue 
 					}
@@ -124,7 +122,7 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 					}
 					tagsStr := strings.Join(tagStrs, " ")
 					
-					// 3. ✨ 关键升级：获取 Pages (多图+宽高)
+					// 3. 获取 Pages (多图)
 					pagesResp, err := client.R().Get(fmt.Sprintf("https://www.pixiv.net/ajax/illust/%d/pages?lang=zh", id))
 					if err != nil { continue }
 
@@ -135,20 +133,14 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 						continue
 					}
 
-					// 4. 开始处理每一张图 (支持多图发送)
-					// 这里我们简化逻辑：循环发每一张图，或者你可以改成 MediaGroup
-					// 为了数据库 FileID 的准确性，我们采用“带页码标记”的单发模式
-					
-					// 限制一下多图数量，防止一个作品 200 张图刷屏
+					// 4. 开始处理每一张图
 					maxPages := 5 
 					
 					for i, page := range pages.Body {
 						if i >= maxPages { break }
 
-						// 构造唯一的 PID: pixiv_12345_p0, pixiv_12345_p1
 						subPid := fmt.Sprintf("pixiv_%d_p%d", id, i)
 						
-						// 双重检查：防止中断后重启重复发后面几张
 						if db.History[subPid] {
 							continue
 						}
@@ -161,38 +153,23 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 							continue
 						}
 
-						// 构造标题
 						caption := fmt.Sprintf("Pixiv: %s [P%d/%d]\nArtist: %s\nTags: #%s", 
 							detail.Body.IllustTitle, i+1, len(pages.Body), 
 							detail.Body.UserName, 
 							strings.ReplaceAll(tagsStr, " ", " #"))
 
-						// 发送并存库 (带宽高!)
-						// 注意：这里的 source 我们传 "pixiv"，但 filename 最好带上 p0
-						// ProcessAndSend 内部会用 subPid 作为 ID 存入 D1
-						// ✅ 安全检查：防止 invalid dimensions 错误
-						sendWidth := page.Width
-						sendHeight := page.Height
-
-						// 如果 API 返回 0，或者尺寸太离谱（超过 10000px），就重置为 0 让 Telegram 自动处理
-						if sendWidth <= 0 || sendHeight <= 0 || sendWidth > 10000 || sendHeight > 10000 {
-							log.Printf("⚠️ Invalid dimensions from Pixiv API (%dx%d), resetting to 0 (Auto)", sendWidth, sendHeight)
-							sendWidth = 0
-							sendHeight = 0
-						}
-
-						// 发送并存库
-						botHandler.ProcessAndSend(ctx, imgResp.Body(), subPid, tagsStr, caption, "pixiv", sendWidth, sendHeight)
+						// ✅ 关键回退：强制传 0, 0 作为宽高
+						// 既然你的 Bot 以前能跑，说明 ProcessAndSend 在收到 0 时或者不传时，Telegram 能够自动处理
+						// 只要不把 Pixiv 返回的奇怪数值（可能导致 400 错误）传过去就行
+						botHandler.ProcessAndSend(ctx, imgResp.Body(), subPid, tagsStr, caption, "pixiv", 0, 0)
 						
-						time.Sleep(3 * time.Second) // 慢一点，防止被 ban
+						time.Sleep(3 * time.Second) 
 					}
 					
 					db.PushHistory()
-					
 				}
 			}
 
-			
 			log.Println("😴 Pixiv Done. Sleeping 10m...")
 			time.Sleep(10 * time.Minute)
 		}
