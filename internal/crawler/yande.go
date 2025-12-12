@@ -27,8 +27,15 @@ type YandePost struct {
 
 func StartYande(ctx context.Context, cfg *config.Config, db *database.D1Client, botHandler *telegram.BotHandler) {
 	client := resty.New()
-	client.SetTimeout(30 * time.Second)
-	client.SetRetryCount(2)
+	
+	// ✅ 1. 设置超时为 120秒
+	client.SetTimeout(90 * time.Second)
+	
+	client.SetRetryCount(3)
+	client.SetRetryWaitTime(4 * time.Second)
+
+	// ✅ 3. 伪装 User-Agent 为 Chrome 浏览器
+	client.SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
 	for {
 		select {
@@ -152,7 +159,7 @@ func processMediaGroup(ctx context.Context, client *resty.Client, posts []YandeP
 }
 
 func selectBestImageURL(post YandePost) string {
-	const MaxSize = 15 * 1024 * 1024
+	const MaxSize = 13 * 1024 * 1024
 	if post.FileSize > 0 && post.FileSize < MaxSize {
 		return post.FileURL
 	}
