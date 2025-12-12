@@ -13,7 +13,7 @@ import (
 type D1Client struct {
 	client  *resty.Client
 	cfg     *config.Config
-	History map[string]bool // 本地缓存的已发送ID
+	History map[string]bool
 }
 
 func NewD1Client(cfg *config.Config) *D1Client {
@@ -24,7 +24,6 @@ func NewD1Client(cfg *config.Config) *D1Client {
 	}
 }
 
-// SyncHistory 从 Worker 获取历史记录
 func (d *D1Client) SyncHistory() {
 	if d.cfg.WorkerURL == "" {
 		return
@@ -44,7 +43,6 @@ func (d *D1Client) SyncHistory() {
 	log.Printf("🧠 Synced %d items from history", len(d.History))
 }
 
-// PushHistory 上传历史记录到 Worker
 func (d *D1Client) PushHistory() {
 	if d.cfg.WorkerURL == "" {
 		return
@@ -66,14 +64,16 @@ func (d *D1Client) PushHistory() {
 	}
 }
 
-// SaveImage 写入 D1 数据库
-func (d *D1Client) SaveImage(postID, fileID, caption, tags, source string) error {
+// SaveImage 支持 width 和 height
+func (d *D1Client) SaveImage(postID, fileID, caption, tags, source string, width, height int) error {
 	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/d1/database/%s/query", 
 		d.cfg.CF_AccountID, d.cfg.D1_DatabaseID)
 	
 	finalTags := fmt.Sprintf("%s %s", tags, source)
-	sql := "INSERT OR IGNORE INTO images (id, file_name, caption, tags, created_at) VALUES (?, ?, ?, ?, ?)"
-	params := []interface{}{postID, fileID, caption, finalTags, time.Now().Unix()}
+	
+	// ⚠️ 请确保你在 D1 执行了: ALTER TABLE images ADD COLUMN width INTEGER; ALTER TABLE images ADD COLUMN height INTEGER;
+	sql := "INSERT OR IGNORE INTO images (id, file_name, caption, tags, created_at, width, height) VALUES (?, ?, ?, ?, ?, ?, ?)"
+	params := []interface{}{postID, fileID, caption, finalTags, time.Now().Unix(), width, height}
 	
 	body := map[string]interface{}{
 		"sql":    sql,
@@ -93,7 +93,6 @@ func (d *D1Client) SaveImage(postID, fileID, caption, tags, source string) error
 		return fmt.Errorf("D1 Error: %s", resp.String())
 	}
 	
-	// 更新本地缓存
 	d.History[postID] = true
 	return nil
 }
