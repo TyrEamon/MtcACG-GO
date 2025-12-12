@@ -27,10 +27,10 @@ type YandePost struct {
 
 func StartYande(ctx context.Context, cfg *config.Config, db *database.D1Client, botHandler *telegram.BotHandler) {
 	client := resty.New()
-	
-	// ✅ 1. 设置超时为 120秒
+
+	// ✅ 1. 设置超时为 90秒
 	client.SetTimeout(90 * time.Second)
-	
+
 	client.SetRetryCount(3)
 	client.SetRetryWaitTime(4 * time.Second)
 
@@ -76,8 +76,10 @@ func StartYande(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 					targetID = post.ParentID
 				}
 
-				familyPosts := fetchFamily(client, targetID)
+				// ✅ 改动1：改用 fetchFamilyWithParent 确保包含父图
+				familyPosts := fetchFamilyWithParent(client, targetID)
 				if len(familyPosts) == 0 {
+					// 兜底：如果 API 查不到，至少处理自己
 					familyPosts = []YandePost{post}
 				}
 
@@ -86,8 +88,11 @@ func StartYande(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 					p := familyPosts[0]
 					processSingleImage(ctx, client, p, db, botHandler)
 					processedInLoop[p.ID] = true
+					// 单图也存入历史，防止重复
+					db.History[fmt.Sprintf("yande_%d", p.ID)] = true
 				} else {
-					processMediaGroup(ctx, client, familyPosts, db, botHandler)
+					// ✅ 改动2：传入 targetID (父ID) 用于生成统一格式的 ID
+					processMediaGroup(ctx, client, familyPosts, targetID, db, botHandler)
 					for _, p := range familyPosts {
 						processedInLoop[p.ID] = true
 						// 标记子图为已处理
@@ -101,25 +106,41 @@ func StartYande(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 				time.Sleep(3 * time.Second)
 			}
 
-			log.Println("😴 Yande Done. Sleeping 10m...")
+			log.Println("😴 Yande Done. Sleeping 180m...") // Log 文字修正，与下面一致
 			time.Sleep(180 * time.Minute)
 		}
 	}
 }
 
-func fetchFamily(client *resty.Client, parentID int) []YandePost {
-	url := fmt.Sprintf("https://yande.re/post.json?tags=parent:%d", parentID)
-	resp, err := client.R().Get(url)
-	if err != nil {
-		return nil
+// ✅ 改动3：重构 fetchFamily，先查父图再查子图
+func fetchFamilyWithParent(client *resty.Client, parentID int) []YandePost {
+	var finalFamily []YandePost
+
+	// 1. 尝试获取父图本身 (如果父ID确实存在)
+	// 有些老图 ParentID 可能已被删除，但这步通常能保证父图在列
+	urlParent := fmt.Sprintf("https://yande.re/post.json?tags=id:%d", parentID)
+	respP, errP := client.R().Get(urlParent)
+	var parents []YandePost
+	if errP == nil {
+		_ = json.Unmarshal(respP.Body(), &parents)
+		if len(parents) > 0 {
+			finalFamily = append(finalFamily, parents[0])
+		}
 	}
-	var posts []YandePost
-	if err := json.Unmarshal(resp.Body(), &posts); err != nil {
-		return nil
+
+	// 2. 获取所有子图
+	urlChildren := fmt.Sprintf("https://yande.re/post.json?tags=parent:%d", parentID)
+	respC, errC := client.R().Get(urlChildren)
+	var children []YandePost
+	if errC == nil {
+		_ = json.Unmarshal(respC.Body(), &children)
+		finalFamily = append(finalFamily, children...)
 	}
-	return posts
+
+	return finalFamily
 }
 
+// processSingleImage 保持不变
 func processSingleImage(ctx context.Context, client *resty.Client, post YandePost, db *database.D1Client, botHandler *telegram.BotHandler) {
 	imgURL := selectBestImageURL(post)
 	log.Printf("⬇️ Downloading Yande: %d", post.ID)
@@ -136,8 +157,9 @@ func processSingleImage(ctx context.Context, client *resty.Client, post YandePos
 	botHandler.ProcessAndSend(ctx, imgResp.Body(), pid, post.Tags, caption, "yande", post.Width, post.Height)
 }
 
-func processMediaGroup(ctx context.Context, client *resty.Client, posts []YandePost, db *database.D1Client, botHandler *telegram.BotHandler) {
-	log.Printf("📦 Processing MediaGroup for Parent: %d (Count: %d)", posts[0].ParentID, len(posts))
+// ✅ 改动4：增加 parentID 参数，并修改 ID 生成逻辑
+func processMediaGroup(ctx context.Context, client *resty.Client, posts []YandePost, parentID int, db *database.D1Client, botHandler *telegram.BotHandler) {
+	log.Printf("📦 Processing Family Group: %d (Count: %d)", parentID, len(posts))
 
 	for i, p := range posts {
 		if i >= 10 {
@@ -150,14 +172,24 @@ func processMediaGroup(ctx context.Context, client *resty.Client, posts []YandeP
 			continue
 		}
 
-		caption := fmt.Sprintf("Yande Set: %d [%d/%d]\nTags: #%s", p.ParentID, i+1, len(posts), strings.Split(p.Tags, " ")[0])
-		pid := fmt.Sprintf("yande_%d", p.ID)
+		// 格式化 Caption
+		tags := strings.Split(p.Tags, " ")
+		firstTag := ""
+		if len(tags) > 0 {
+			firstTag = tags[0]
+		}
+		caption := fmt.Sprintf("Yande Set: %d [%d/%d]\nTags: #%s", parentID, i+1, len(posts), firstTag)
+
+		// ✅ 核心改动：ID 统一为 yande_{父ID}_p{序号}
+		// 这样前端 Worker 就可以识别出它们是一组
+		pid := fmt.Sprintf("yande_%d_p%d", parentID, i)
 
 		botHandler.ProcessAndSend(ctx, imgResp.Body(), pid, p.Tags, caption, "yande", p.Width, p.Height)
 		time.Sleep(1 * time.Second)
 	}
 }
 
+// selectBestImageURL 保持不变
 func selectBestImageURL(post YandePost) string {
 	const MaxSize = 13 * 1024 * 1024
 	if post.FileSize > 0 && post.FileSize < MaxSize {
