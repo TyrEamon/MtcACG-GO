@@ -83,15 +83,15 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 				}
 				sort.Sort(sort.Reverse(sort.IntSlice(ids)))
 
-				// ✅ 修正逻辑：只取 slice 的前 N 个，不再依赖 count 计数器
-				// 这样无论是否已下载，都只检查最新的 PixivLimit 张，防止无限回溯旧图
-				targetIDs := ids
-				if len(ids) > cfg.PixivLimit {
-					targetIDs = ids[:cfg.PixivLimit]
-				}
-
-				for _, id := range targetIDs {
+				// 限制处理数量
+				count := 0
+				for _, id := range ids {
+					if count >= cfg.PixivLimit {
+						break
+					}
+					
 					// 基础去重 (只要发过第一张，就算这个ID处理过了)
+					// 注意：如果是多图，我们在下面会处理，这里只防重复抓同一个作品
 					mainPid := fmt.Sprintf("pixiv_%d_p0", id)
 					if db.History[mainPid] {
 						continue
@@ -108,9 +108,10 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 						continue
 					}
 					
-					// 如果是动图 (IllustType == 2)，暂时跳过
+					// 如果是动图 (IllustType == 2)，暂时跳过，或者你可以以后加动图逻辑
 					if detail.Body.IllustType == 2 {
 						log.Printf("⚠️ Skip Ugoira (GIF): %d", id)
+						// 标记为已处理，防止反复检查
 						db.History[mainPid] = true
 						continue 
 					}
@@ -122,7 +123,7 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 					}
 					tagsStr := strings.Join(tagStrs, " ")
 					
-					// 3. 获取 Pages (多图)
+					// 3. ✨ 关键升级：获取 Pages (多图+宽高)
 					pagesResp, err := client.R().Get(fmt.Sprintf("https://www.pixiv.net/ajax/illust/%d/pages?lang=zh", id))
 					if err != nil { continue }
 
@@ -133,14 +134,20 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 						continue
 					}
 
-					// 4. 开始处理每一张图
+					// 4. 开始处理每一张图 (支持多图发送)
+					// 这里我们简化逻辑：循环发每一张图，或者你可以改成 MediaGroup
+					// 为了数据库 FileID 的准确性，我们采用“带页码标记”的单发模式
+					
+					// 限制一下多图数量，防止一个作品 200 张图刷屏
 					maxPages := 5 
 					
 					for i, page := range pages.Body {
 						if i >= maxPages { break }
 
+						// 构造唯一的 PID: pixiv_12345_p0, pixiv_12345_p1
 						subPid := fmt.Sprintf("pixiv_%d_p%d", id, i)
 						
+						// 双重检查：防止中断后重启重复发后面几张
 						if db.History[subPid] {
 							continue
 						}
@@ -153,23 +160,27 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 							continue
 						}
 
+						// 构造标题
 						caption := fmt.Sprintf("Pixiv: %s [P%d/%d]\nArtist: %s\nTags: #%s", 
 							detail.Body.IllustTitle, i+1, len(pages.Body), 
 							detail.Body.UserName, 
 							strings.ReplaceAll(tagsStr, " ", " #"))
 
-						// ✅ 关键回退：强制传 0, 0 作为宽高
-						// 既然你的 Bot 以前能跑，说明 ProcessAndSend 在收到 0 时或者不传时，Telegram 能够自动处理
-						// 只要不把 Pixiv 返回的奇怪数值（可能导致 400 错误）传过去就行
-						botHandler.ProcessAndSend(ctx, imgResp.Body(), subPid, tagsStr, caption, "pixiv", 0, 0)
+						// 发送并存库 (带宽高!)
+						// 注意：这里的 source 我们传 "pixiv"，但 filename 最好带上 p0
+						// ProcessAndSend 内部会用 subPid 作为 ID 存入 D1
+						botHandler.ProcessAndSend(ctx, imgResp.Body(), subPid, tagsStr, caption, "pixiv", page.Width, page.Height)
 						
-						time.Sleep(3 * time.Second) 
+						time.Sleep(3 * time.Second) // 慢一点，防止被 ban
 					}
 					
 					db.PushHistory()
+					
+					count++
 				}
 			}
 
+			
 			log.Println("😴 Pixiv Done. Sleeping 10m...")
 			time.Sleep(10 * time.Minute)
 		}
