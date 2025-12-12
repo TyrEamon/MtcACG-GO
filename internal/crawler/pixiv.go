@@ -58,7 +58,6 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 			return
 		default:
 			log.Println("🍪 Checking Pixiv (Cookie Mode)...")
-			hasNew := false
 
 			for _, uid := range cfg.PixivArtistIDs {
 				// 1. 获取画师所有作品列表
