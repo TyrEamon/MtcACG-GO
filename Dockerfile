@@ -1,42 +1,28 @@
-# 使用最新的 Go 版本，避免老版本的一些 bug
-FROM golang:1.22-alpine AS builder
+# Build Stage (编译阶段)
+FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
-# 安装必要的工具
-RUN apk add --no-cache git tree
-
-# 设置环境
-ENV GO111MODULE=on \
-    CGO_ENABLED=0 \
-    GOOS=linux \
-    GOPROXY=https://goproxy.cn,direct
-
-# 1. 复制依赖文件
+# 先复制依赖描述文件
 COPY go.mod ./
-# 只要没报错，先生成 go.sum
-RUN go mod tidy
+# 这一步会自动下载依赖 (你本地不用做)
+RUN go mod download
 
-# 2. 复制所有源码
+# 复制剩下的所有代码
 COPY . .
 
-# 🔥 调试核心：把当前目录下的所有文件结构打印出来
-# 这一步能让你在 build 日志里看到到底拷进去了些什么
-RUN echo "============ 📂 FILE STRUCTURE ============" && \
-    tree . && \
-    echo "==========================================="
+# 编译成可执行文件
+RUN CGO_ENABLED=0 GOOS=linux go build -o bot ./cmd/bot
 
-# 🔥 调试核心：先尝试编译一下 internal 包，看看是哪个包坏了
-RUN echo "🛠️ Checking internal packages..." && \
-    go build -v ./internal/... || echo "❌ Internal build failed"
-
-# 3. 正式编译主程序 (加上 -x 参数显示详细执行过程)
-RUN echo "🚀 Building Main..." && \
-    go build -v -x -o bot ./cmd/bot
-
-# Run Stage
+# Run Stage (运行阶段)
 FROM alpine:latest
+
 WORKDIR /root/
+# 安装证书 (HTTPS请求必须)
 RUN apk --no-cache add ca-certificates tzdata
+
+# 从第一阶段复制编译好的程序
 COPY --from=builder /app/bot .
+
+# 启动
 CMD ["./bot"]
