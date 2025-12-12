@@ -172,17 +172,15 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 						// ProcessAndSend 内部会用 subPid 作为 ID 存入 D1
 						botHandler.ProcessAndSend(ctx, imgResp.Body(), subPid, tagsStr, caption, "pixiv", page.Width, page.Height)
 						
-						hasNew = true
 						time.Sleep(3 * time.Second) // 慢一点，防止被 ban
 					}
+					
+					db.PushHistory()
 					
 					count++
 				}
 			}
 
-			if hasNew {
-				db.PushHistory()
-			}
 			
 			log.Println("😴 Pixiv Done. Sleeping 10m...")
 			time.Sleep(10 * time.Minute)
