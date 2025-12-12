@@ -37,7 +37,7 @@ func StartYande(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 		default:
 			log.Println("🔍 Checking Yande...")
 			url := fmt.Sprintf("https://yande.re/post.json?limit=%d&tags=%s", cfg.YandeLimit, cfg.YandeTags)
-			
+
 			resp, err := client.R().Get(url)
 			if err != nil {
 				log.Printf("Yande API Error: %v", err)
@@ -74,6 +74,7 @@ func StartYande(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 					familyPosts = []YandePost{post}
 				}
 
+				// 处理单图或套图
 				if len(familyPosts) == 1 {
 					p := familyPosts[0]
 					processSingleImage(ctx, client, p, db, botHandler)
@@ -82,9 +83,13 @@ func StartYande(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 					processMediaGroup(ctx, client, familyPosts, db, botHandler)
 					for _, p := range familyPosts {
 						processedInLoop[p.ID] = true
+						// 标记子图为已处理
 						db.History[fmt.Sprintf("yande_%d", p.ID)] = true
 					}
 				}
+
+				// ✅ 【关键修正】每处理完一组图，立即保存历史到云端
+				db.PushHistory()
 
 				time.Sleep(3 * time.Second)
 			}
@@ -111,7 +116,7 @@ func fetchFamily(client *resty.Client, parentID int) []YandePost {
 func processSingleImage(ctx context.Context, client *resty.Client, post YandePost, db *database.D1Client, botHandler *telegram.BotHandler) {
 	imgURL := selectBestImageURL(post)
 	log.Printf("⬇️ Downloading Yande: %d", post.ID)
-	
+
 	imgResp, err := client.R().Get(imgURL)
 	if err != nil {
 		log.Printf("Failed to download image: %v", err)
@@ -120,33 +125,34 @@ func processSingleImage(ctx context.Context, client *resty.Client, post YandePos
 
 	pid := fmt.Sprintf("yande_%d", post.ID)
 	caption := fmt.Sprintf("Yande: %d\nTags: #%s", post.ID, strings.ReplaceAll(post.Tags, " ", " #"))
-	
-	// 这里把 post.Width 和 post.Height 传进去
+
 	botHandler.ProcessAndSend(ctx, imgResp.Body(), pid, post.Tags, caption, "yande", post.Width, post.Height)
 }
 
 func processMediaGroup(ctx context.Context, client *resty.Client, posts []YandePost, db *database.D1Client, botHandler *telegram.BotHandler) {
 	log.Printf("📦 Processing MediaGroup for Parent: %d (Count: %d)", posts[0].ParentID, len(posts))
-	
+
 	for i, p := range posts {
-		if i >= 10 { break } 
-		
+		if i >= 10 {
+			break
+		}
+
 		imgURL := selectBestImageURL(p)
 		imgResp, err := client.R().Get(imgURL)
-		if err != nil { continue }
+		if err != nil {
+			continue
+		}
 
-		// 构造系列标题
 		caption := fmt.Sprintf("Yande Set: %d [%d/%d]\nTags: #%s", p.ParentID, i+1, len(posts), strings.Split(p.Tags, " ")[0])
 		pid := fmt.Sprintf("yande_%d", p.ID)
-		
-		// 传宽高
+
 		botHandler.ProcessAndSend(ctx, imgResp.Body(), pid, p.Tags, caption, "yande", p.Width, p.Height)
 		time.Sleep(1 * time.Second)
 	}
 }
 
 func selectBestImageURL(post YandePost) string {
-	const MaxSize = 15 * 1024 * 1024 
+	const MaxSize = 15 * 1024 * 1024
 	if post.FileSize > 0 && post.FileSize < MaxSize {
 		return post.FileURL
 	}
