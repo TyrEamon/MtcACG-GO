@@ -3,18 +3,22 @@ FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
-# ✅ 这一步是关键：安装 git 和 ca-certificates 证书
+# 安装 git 和证书（必须）
 RUN apk add --no-cache git ca-certificates
 
-# 如果你在国内或者GitHub Action有时候慢，加上这个代理（可选，建议加上）
+# 设置国内代理，加速且稳定
 ENV GOPROXY=https://goproxy.cn,direct
 
+# 只复制 go.mod，暂时不复制 go.sum
 COPY go.mod ./
-# 最好把 go.sum 加上，如果没有就算了
-# COPY go.sum ./ 
 
-RUN go mod download
+# ⚠️ 关键修改：先创建一个空的 go.sum，防止报错
+RUN touch go.sum
 
+# ⚠️ 关键修改：用 go mod tidy 自动拉取依赖并生成 go.sum，代替 go mod download
+RUN go mod tidy
+
+# 复制源码
 COPY . .
 
 # 编译
@@ -24,7 +28,6 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o bot ./cmd/bot
 FROM alpine:latest
 
 WORKDIR /root/
-# 运行时镜像也要装证书，不然 HTTPS 请求会报错
 RUN apk --no-cache add ca-certificates tzdata
 
 COPY --from=builder /app/bot .
