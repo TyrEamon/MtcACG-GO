@@ -73,40 +73,46 @@ func (h *BotHandler) ProcessAndSend(ctx context.Context, imgData []byte, postID,
 }
 
 func (h *BotHandler) handleManual(ctx context.Context, b *bot.Bot, update *models.Update) {
-	if update.Message == nil || len(update.Message.Photo) == 0 {
-		return
-	}
-	
-	photo := update.Message.Photo[len(update.Message.Photo)-1]
-	postID := fmt.Sprintf("manual_%d", update.Message.ID)
-	caption := update.Message.Caption
-	if caption == "" {
-		caption = "Forwarded Image"
-	}
+    if update.Message == nil || len(update.Message.Photo) == 0 {
+        return
+    }
 
-	msg, err := b.SendPhoto(ctx, &bot.SendPhotoParams{
-		ChatID:  h.Cfg.ChannelID,
-		Photo:   &models.InputFileString{Data: photo.FileID},
-		Caption: caption,
-	})
-	
-	if err != nil {
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   "❌ Forward failed: " + err.Error(),
-		})
-		return
-	}
+    // 用户发来的最大尺寸那张图，里面自带宽高
+    photo := update.Message.Photo[len(update.Message.Photo)-1]
 
-	finalFileID := msg.Photo[len(msg.Photo)-1].FileID
-	// 手动转发的图没有宽高信息，暂时存 0
-	h.DB.SaveImage(postID, finalFileID, caption, "manual forwarded", "manual", 0, 0)
-	
-	b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: update.Message.Chat.ID,
-		Text:   "✅ Saved to D1!",
-		ReplyParameters: &models.ReplyParameters{
-			MessageID: update.Message.ID,
-		},
-	})
+    postID := fmt.Sprintf("manual_%d", update.Message.ID)
+    caption := update.Message.Caption
+    if caption == "" {
+        caption = "Forwarded Image"
+    }
+
+    // 先转存到图床频道
+    msg, err := b.SendPhoto(ctx, &bot.SendPhotoParams{
+        ChatID: h.Cfg.ChannelID,
+        Photo:  &models.InputFileString{Data: photo.FileID},
+        Caption: caption,
+    })
+    if err != nil {
+        b.SendMessage(ctx, &bot.SendMessageParams{
+            ChatID: update.Message.Chat.ID,
+            Text:   "❌ Forward failed: " + err.Error(),
+        })
+        return
+    }
+
+    finalFileID := msg.Photo[len(msg.Photo)-1].FileID
+
+    // 使用原消息里的宽高
+    width := photo.Width
+    height := photo.Height
+
+    h.DB.SaveImage(postID, finalFileID, caption, "manual forwarded", "manual", width, height)
+
+    b.SendMessage(ctx, &bot.SendMessageParams{
+        ChatID: update.Message.Chat.ID,
+        Text:   "✅ Saved to D1!",
+        ReplyParameters: &models.ReplyParameters{
+            MessageID: update.Message.ID,
+        },
+    })
 }
