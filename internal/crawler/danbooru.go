@@ -8,6 +8,7 @@ import (
 	"my-bot-go/internal/config"
 	"my-bot-go/internal/database"
 	"my-bot-go/internal/telegram"
+	"net/url" // ✅ 必须加这个包
 	"strings"
 	"time"
 
@@ -36,7 +37,7 @@ func StartDanbooru(ctx context.Context, cfg *config.Config, db *database.D1Clien
 		SetTimeout(60 * time.Second). // 超时设长一点
 		SetRetryCount(2)
 
-// ✅ 使用 Config 中的配置进行认证
+	// ✅ 使用 Config 中的配置进行认证
 	if cfg.DanbooruUsername != "" && cfg.DanbooruAPIKey != "" {
 		client.SetBasicAuth(cfg.DanbooruUsername, cfg.DanbooruAPIKey)
 		log.Println("🔑 Danbooru API Key enabled")
@@ -55,16 +56,17 @@ func StartDanbooru(ctx context.Context, cfg *config.Config, db *database.D1Clien
 		default:
 			log.Println("🔍 Checking Danbooru...")
 
+			// ✅ 关键修正：对 Tags 进行 URL 编码，防止空格导致 URL 断裂
+			encodedTags := url.QueryEscape(cfg.DanbooruTags)
+
 			// 构造查询 URL
-			// 注意：如果 tags 包含特殊字符，最好用 url.QueryEscape(cfg.DanbooruTags)
-			// 但如果你只有简单的 tags (如 genshin_impact)，这样也没问题
-			url := fmt.Sprintf(
+			targetURL := fmt.Sprintf(
 				"https://danbooru.donmai.us/posts.json?limit=%d&tags=%s",
 				cfg.DanbooruLimit,
-				cfg.DanbooruTags,
+				encodedTags,
 			)
 
-			resp, err := client.R().Get(url)
+			resp, err := client.R().Get(targetURL)
 			if err != nil {
 				log.Printf("Danbooru Error: %v", err)
 				time.Sleep(1 * time.Minute)
