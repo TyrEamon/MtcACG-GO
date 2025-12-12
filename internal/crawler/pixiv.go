@@ -50,7 +50,7 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 	client.SetHeader("Referer", "https://www.pixiv.net/")
 	client.SetHeader("Cookie", "PHPSESSID="+cfg.PixivPHPSESSID)
 	// 建议把超时设长一点
-	client.SetTimeout(30 * time.Second)
+	client.SetTimeout(60 * time.Second)
 
 	for {
 		select {
