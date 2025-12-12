@@ -113,7 +113,7 @@ func StartManyACG(ctx context.Context, cfg *config.Config, db *database.D1Client
 			}
 
 			log.Println("😴 ManyACG Batch Done. Sleeping 5m...")
-			time.Sleep(5 * time.Minute)
+			time.Sleep(30 * time.Minute)
 		}
 	}
 }
