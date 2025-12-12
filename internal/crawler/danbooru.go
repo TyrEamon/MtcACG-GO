@@ -36,8 +36,13 @@ func StartDanbooru(ctx context.Context, cfg *config.Config, db *database.D1Clien
 		SetTimeout(60 * time.Second). // 超时设长一点
 		SetRetryCount(2)
 
-	// ✅ 设置 API 认证 (绕过 Cloudflare)
-	client.SetBasicAuth("MTCacg", "J6fvDmaswPhggJEBuqZ7i2p5")
+// ✅ 使用 Config 中的配置进行认证
+	if cfg.DanbooruUsername != "" && cfg.DanbooruAPIKey != "" {
+		client.SetBasicAuth(cfg.DanbooruUsername, cfg.DanbooruAPIKey)
+		log.Println("🔑 Danbooru API Key enabled")
+	} else {
+		log.Println("⚠️ Danbooru API Key missing (Cloudflare might block requests)")
+	}
 	
 	// 设置 User-Agent 和 Accept 头
 	client.SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
