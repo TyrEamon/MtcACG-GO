@@ -1,28 +1,28 @@
-# Build Stage (编译阶段)
+# Build Stage
 FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
-# 先复制依赖描述文件
+# 1️⃣ 这一步是关键：设置国内可访问的 Go 代理（七牛云或阿里云），防止下载失败
+ENV GOPROXY=https://goproxy.cn,direct
+
 COPY go.mod ./
-# 这一步会自动下载依赖 (你本地不用做)
+# 有时候还需要 go.sum，如果没有也行，但最好有
+# COPY go.sum ./ 
+
 RUN go mod download
 
-# 复制剩下的所有代码
 COPY . .
 
-# 编译成可执行文件
+# 编译
 RUN CGO_ENABLED=0 GOOS=linux go build -o bot ./cmd/bot
 
-# Run Stage (运行阶段)
+# Run Stage
 FROM alpine:latest
 
 WORKDIR /root/
-# 安装证书 (HTTPS请求必须)
 RUN apk --no-cache add ca-certificates tzdata
 
-# 从第一阶段复制编译好的程序
 COPY --from=builder /app/bot .
 
-# 启动
 CMD ["./bot"]
