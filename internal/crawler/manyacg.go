@@ -68,6 +68,9 @@ func StartManyACG(ctx context.Context, cfg *config.Config, db *database.D1Client
 				botHandler.ProcessAndSend(ctx, imgResp.Body(), pid, artwork.Title, caption, "manyacg", artwork.Width, artwork.Height)
 
 				db.History[pid] = true
+
+				db.PushHistory()
+				
 				time.Sleep(3 * time.Second)
 			}
 
