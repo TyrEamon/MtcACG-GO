@@ -265,7 +265,6 @@ func (h *BotHandler) handleCallback(ctx context.Context, b *bot.Bot, update *mod
 	session, exists := h.Sessions[userID]
 	
 	if !exists || session.State != StateWaitingTag {
-        // 尝试给用户发个提示，这里 chatID 还没拿到，尝试从 From 获取
 		b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: userID, 
 			Text:   "⚠️ 会话已过期，请重新转发图片。",
@@ -283,30 +282,10 @@ func (h *BotHandler) handleCallback(ctx context.Context, b *bot.Bot, update *mod
 		return
 	}
 
-    // ✅ 安全获取 ChatID 和 MessageID
-    var chatID int64
-    var messageID int
-
-    switch m := update.CallbackQuery.Message.(type) {
-    case *models.Message:
-        chatID = m.Chat.ID
-        messageID = m.ID
-    case models.Message:
-        chatID = m.Chat.ID
-        messageID = m.ID
-    case *models.InaccessibleMessage:
-         chatID = m.Chat.ID
-         messageID = m.MessageID
-    case models.InaccessibleMessage:
-         chatID = m.Chat.ID
-         messageID = m.MessageID
-    }
-
-    if chatID == 0 {
-        // 兜底：如果上面的 switch 都没命中，说明类型非常奇怪
-        // 此时我们只能放弃编辑原消息，直接用 UserID 发新消息（私聊场景下 UserID = ChatID）
-        chatID = userID
-    }
+    // ✅ 修正部分：直接访问结构体字段
+    // 编译器说它是 InaccessibleMessage struct，那它一定有 Chat 和 MessageID
+    chatID := update.CallbackQuery.Message.Chat.ID
+    messageID := update.CallbackQuery.Message.MessageID
 
 	// 1. 发送到频道
 	msg, err := b.SendPhoto(ctx, &bot.SendPhotoParams{
@@ -332,19 +311,12 @@ func (h *BotHandler) handleCallback(ctx context.Context, b *bot.Bot, update *mod
 	}
 
     // 4. 编辑消息
-    if messageID != 0 {
-        b.EditMessageText(ctx, &bot.EditMessageTextParams{
-            ChatID:    chatID,
-            MessageID: messageID,
-            Text:      resultText,
-        })
-    } else {
-        // 如果没拿到 MessageID，就发条新消息
-        b.SendMessage(ctx, &bot.SendMessageParams{
-            ChatID: chatID,
-            Text:   resultText,
-        })
-    }
+    // 使用刚才获取到的 messageID
+    b.EditMessageText(ctx, &bot.EditMessageTextParams{
+        ChatID:    chatID,
+        MessageID: messageID, 
+        Text:      resultText,
+    })
 
 	// 清除会话
 	delete(h.Sessions, userID)
