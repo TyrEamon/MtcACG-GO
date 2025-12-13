@@ -3,25 +3,13 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // ==========================================
-    // 🧠 新增：云端记忆 API (供 Python Bot 使用)
-    // ==========================================
-    if (path === '/api/get_history') {
-      const history = await env.KV.get('pixiv_history');
-      return new Response(history || '');
-    }
-    if (path === '/api/update_history') {
-      if (request.method !== 'POST') return new Response('Method not allowed', {status: 405});
-      const newHistory = await request.text();
-      await env.KV.put('pixiv_history', newHistory);
-      return new Response('OK');
-    }
-    // ==========================================
-
-    if (path.startsWith('/image/')) {
-      const fileId = path.replace('/image/', '');
-      return await proxyTelegramImage(fileId, env.BOT_TOKEN);
-    }
+// 在处理 '/image/' 路由的地方
+if (path.startsWith('/image/')) {
+  const fileId = path.replace('/image/', '');
+  // 获取 dl 参数 (这里拿到的就是 "jpg")
+  const dlExt = url.searchParams.get('dl'); 
+  return await proxyTelegramImage(fileId, env.BOT_TOKEN, dlExt);
+}
 
     if (path === '/api/posts') {
       const q = url.searchParams.get('q');
@@ -32,11 +20,46 @@ export default {
         return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json' }});
       }
 
-      let sql = q 
-        ? `SELECT * FROM images WHERE tags LIKE ? OR caption LIKE ? ORDER BY created_at DESC LIMIT 20 OFFSET ?`
-        : `SELECT * FROM images ORDER BY created_at DESC LIMIT 20 OFFSET ?`;
-      
-      const params = q ? [`%${q}%`, `%${q}%`, offset] : [offset];
+      // === 进阶搜索优化 ===
+      let sql;
+      let params = [];
+
+      if (q) {
+        // 1. 清洗并拆分关键词
+        // 去掉 # 号，按空格拆分，过滤掉空字符串
+        const keywords = q.replace(/#/g, '').trim().split(/\s+/).filter(k => k.length > 0);
+
+        if (keywords.length > 0) {
+            // 2. 动态构建 SQL 条件
+            // 对每个关键词生成一个 (tags LIKE ? OR caption LIKE ?) 条件
+            // 并用 AND 连接，表示所有关键词都必须匹配（交集搜索）
+            const conditions = keywords.map(() => `(tags LIKE ? OR caption LIKE ?)`).join(' AND ');
+            
+            sql = `
+                SELECT * FROM images 
+                WHERE ${conditions}
+                ORDER BY created_at DESC 
+                LIMIT 20 OFFSET ?
+            `;
+
+            // 3. 准备参数数组
+            // 每个关键词需要绑定两次（一次给 tags，一次给 caption）
+            keywords.forEach(k => {
+                params.push(`%${k}%`); // 给 tags
+                params.push(`%${k}%`); // 给 caption
+            });
+            params.push(offset); // 最后加上 offset
+        } else {
+            // 如果拆分后没有有效关键词（例如只输了空格），回退到默认
+            sql = `SELECT * FROM images ORDER BY created_at DESC LIMIT 20 OFFSET ?`;
+            params = [offset];
+        }
+      } else {
+        // 无搜索词情况
+        sql = `SELECT * FROM images ORDER BY created_at DESC LIMIT 20 OFFSET ?`;
+        params = [offset];
+      }
+      // === 优化结束 ===
 
       try {
         const { results } = await env.DB.prepare(sql).bind(...params).all();
@@ -54,19 +77,29 @@ export default {
   }
 };
 
-async function proxyTelegramImage(fileId, botToken) {
+// 默认参数 dlExt = null，保证了不传参数时行为和原来一致
+async function proxyTelegramImage(fileId, botToken, dlExt = null) {
   try {
     const r1 = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`);
     const j1 = await r1.json();
-    if (!j1.ok) return new Response('404', {status: 404});
+    if (!j1.ok) return new Response("404", { status: 404 });
 
     const r2 = await fetch(`https://api.telegram.org/file/bot${botToken}/${j1.result.file_path}`);
     const h = new Headers(r2.headers);
-    h.set('Cache-Control', 'public, max-age=31536000, immutable');
-    h.set('Access-Control-Allow-Origin', '*');
+    h.set("Cache-Control", "public, max-age=31536000, immutable");
+    h.set("Access-Control-Allow-Origin", "*");
+
+    // === 新增部分开始 ===
+    // 只有在 URL 里传了 dl=jpg 时才会执行这里，否则直接跳过
+    if (dlExt) {
+        const filename = `${fileId}.${dlExt}`;
+        h.set("Content-Disposition", `attachment; filename="${filename}"`);
+    }
+    // === 新增部分结束 ===
+
     return new Response(r2.body, { headers: h });
-  } catch {
-    return new Response('Error', {status: 500});
+  } catch (e) {
+    return new Response("Error", { status: 500 });
   }
 }
 
@@ -159,9 +192,12 @@ async function randomImage() {
   
   // 初始化开关状态
   setTimeout(() => {
-      const toggle = document.getElementById('r18-toggle-sidebar');
-      if(toggle) toggle.checked = (localStorage.getItem('hide_r18') !== 'false');
-  }, 100);
+    const toggle = document.getElementById('r18-toggle-sidebar');
+    if(toggle) {
+        toggle.checked = (localStorage.getItem('hide_r18') !== 'true');
+    }
+}, 100);
+  
 
   async function randomPost() {
     try { 
@@ -202,8 +238,9 @@ async function handleDetail(id, env) {
   const imagesJson = JSON.stringify(items.map(x => ({ 
     id: x.id, 
     file: x.file_name,
-    download: `/image/${x.file_name}`
-  })));
+    // 强制指定下载后缀为 jpg
+    download: `/image/${x.file_name}?dl=jpg`
+})));
 
   // 侧边栏 HTML (背景 bg-[#1a1a1a] 不透明，防止花屏
   const SIDEBAR_CONTENT = `
@@ -231,7 +268,7 @@ async function handleDetail(id, env) {
           <div class="flex items-center justify-between p-3">
              <span class="text-gray-300 flex items-center"><span class="mr-3">🔞</span> R18 哒咩~</span>
              <label class="relative inline-flex items-center cursor-pointer">
-               <input type="checkbox" id="r18-toggle" class="sr-only peer" onchange="toggleR18(this)">
+               <input type="checkbox" id="r18-toggle-sidebar" class="sr-only peer" onchange="toggleR18(this)">
                <div class="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600"></div>
              </label>
           </div>
@@ -409,9 +446,12 @@ async function handleDetail(id, env) {
       location.reload();
     }
     setTimeout(() => {
-        const toggle = document.getElementById('r18-toggle');
-        if(toggle) toggle.checked = (localStorage.getItem('hide_r18') !== 'false');
-    }, 100);
+      const toggle = document.getElementById('r18-toggle-sidebar');
+      if(toggle) {
+          toggle.checked = (localStorage.getItem('hide_r18') !== 'true');
+      }
+  }, 100);  
+  
 
     const root = document.getElementById('app');
     const images = JSON.parse(root.dataset.images);
@@ -517,13 +557,14 @@ function htmlAbout() {
        <section class="animate-fade-in">
          <h2 class="text-xl font-medium text-white mb-3 flex items-center !mt-0">
            <span class="w-1 h-6 bg-pink-500 rounded-full mr-3 opacity-80"></span>
-           序言 · Prologue
+           序 · Start
          </h2>
          <p>
-           在互联网的浩瀚烟海中，MtcACG 只是一个静谧的角落。
+         欢迎来到 MtcACG！(≧∇≦)ﾉ
+         在乱糟糟的互联网异世界里，这里是本站长偷偷搭建的“秘密基地”。
          </p>
          <p class="mt-2">
-           这里没有喧嚣的爬虫，没有算法的裹挟。每一张图片，都来自我个人的凝视与收藏。它们或许是某个深夜的惊鸿一瞥，或许是某段记忆的色彩切片。我将它们安放于此，像是在数字世界里搭建了一座私人的空中花园。
+         这里没有算法裹挟，只有我的私人凝视。每一张图，都是我从时间里切下的碎片，安放于此，建成一座只属于我的数字花园。
          </p>
        </section>
      
@@ -531,11 +572,11 @@ function htmlAbout() {
        <section>
          <h2 class="text-xl font-medium text-white mb-3 flex items-center">
            <span class="w-1 h-6 bg-purple-500 rounded-full mr-3 opacity-80"></span>
-           探索 · Explore
+           逛 · Explore
          </h2>
-         <p>
-           你可以通过 <code>#标签</code> 追寻线索，或是在 <code>瀑布流</code> 中随波逐流。
-           这里还藏着一把通往里世界的钥匙 —— 点击左上角菜单，你可以开启或关闭 <strong>R-18 滤镜</strong>。请在这个静谧的空间里，保持一份得体的优雅。
+         <p>  
+         想怎么玩都行！跟着 <code>#标签</code> 寻找同好，或在 <code>瀑布流</code> 里无限滑行。
+         还有哦，左上角的菜单里藏着通往“里世界”的钥匙——那是 <strong>R-18 </strong> 的封印。但还是要保持绅士风度哦 (/ω＼)。
          </p>
        </section>
      
@@ -543,14 +584,14 @@ function htmlAbout() {
        <section>
          <h2 class="text-xl font-medium text-white mb-3 flex items-center">
            <span class="w-1 h-6 bg-blue-500 rounded-full mr-3 opacity-80"></span>
-           联结 · Connect
+           连 · Link
          </h2>
          <p>
-           如果你也是一位孤独的收集者，想要与这座花园建立某种数字联结，我留下了一个简单的接口：
+         想把这里的风景带回你的世界？和你定下一个数据契约吧：
            <br>
            <code class="text-sm bg-black/30 px-3 py-2 rounded-lg mt-3 block w-full md:w-auto font-mono text-pink-300 border border-white/5 select-all">/api/posts?q=random</code>
            <br>
-           它会随机赠予你一张此时此刻的风景。
+           这是一个随机召唤阵，每次点击，都会召唤出一张此时此刻的惊喜。
          </p>
        </section>
      
@@ -561,10 +602,11 @@ function htmlAbout() {
            寄语 · Epilogue
          </h2>
          <p>
-           如果你在这里找到了共鸣，或是有话想对我说，欢迎通过 <a href="https://t.me/trytwosBot" target="_blank">Telegram</a> 投递信件。
+         现在的 MtcACG 还在长身体的阶段呢，很多想收录的美图还在排队等着“入驻”。欢迎通过<a href="https://t.me/trytwosBot" target="_blank">Telegram</a> 投递信件。
+         “请多给这个小小的图库一点耐心和爱吧~”
          </p>
          <p class="mt-6 text-sm opacity-60 italic text-center">
-           "愿你在这里，捡拾到属于你的那一片颜料。"
+           "愿你在这里，捕获到最让你心动的那一抹色彩."
          </p>
        </section>
 
