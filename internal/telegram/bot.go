@@ -55,8 +55,8 @@ func NewBot(cfg *config.Config, db *database.D1Client) (*BotHandler, error) {
 	// ✅ 注册 /save 命令
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/save", bot.MatchTypeExact, h.handleSave)
 
-	// ✅ 新增：监听所有文本消息，用于处理交互式问答
-	b.RegisterHandler(bot.HandlerTypeMessageText, "", bot.MatchTypePrefix, h.handleTextReply)
+	// ✅ 注册 CallbackQuery (按钮点击)
+	b.RegisterHandler(bot.HandlerTypeCallbackQuery, "", bot.MatchTypePrefix, h.handleCallback)
 
 		// ✅ 新增：监听所有文本消息，用于处理交互式问答
 	b.RegisterHandler(bot.HandlerTypeMessageText, "", bot.MatchTypePrefix, h.handleTextReply)
@@ -184,13 +184,15 @@ func (h *BotHandler) handleManual(ctx context.Context, b *bot.Bot, update *model
 		MessageID:   update.Message.ID,
 	}
 
-	// 询问用户 (去掉了 ParseModeMarkdown 防止原标题里的特殊符号导致报错)
+	// 询问用户
 	b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
-		Text:   fmt.Sprintf("📩 收到图片！\n\n当前标题：\n%s\n\n是否需要自定义标题？\n1️⃣ 回复 `/title 新标题`\n2️⃣ 回复 `no` 使用原标题", caption),
+		// 修改点：文案更新为 /title 和 /no
+		Text:   fmt.Sprintf("📩 收到图片了,Daishiki喵~🐱！\n\n当前标题：\n%s\n\n🐱主人要自定义标题吗,喵？\n1️🐱和我说 `/title 就可以使用新标题了喵`\n2️⃣ 🐱说 `/no` 那就只能使用原标题的说,喵", caption),
 		ReplyParameters: &models.ReplyParameters{
 			MessageID: update.Message.ID,
 		},
+        // 注意：这里不要加 ParseModeMarkdown，防止原标题里有特殊字符报错
 	})
 
 }
@@ -214,16 +216,18 @@ func (h *BotHandler) handleTextReply(ctx context.Context, b *bot.Bot, update *mo
 
 	// 阶段 1: 确认标题
 	case StateWaitingTitle:
-		if text == "no" || text == "否" {
+        // 修改点：这里把判断条件改成 "/no"
+		if text == "/no" {
 			// 使用默认标题，不做修改
 		} else if len(text) > 7 && text[:7] == "/title " {
 			// 提取 /title 后面的内容
 			session.Caption = text[7:]
 		} else {
 			// 格式错误，拦截并提示
+            // 修改点：提示语也改了
 			b.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID: update.Message.Chat.ID,
-				Text:   "⚠️ 格式错误！\n- 使用原标题请回复 `no`\n- 自定义标题请回复 `/title 新标题`",
+				Text:   "⚠️ 格式错误,喵~！\n- 确认原标题请回复 `/no`喵~\n- 自定义标题请回复 `/title 新标题`喵~",
 				ParseMode: models.ParseModeMarkdown,
 			})
 			return
@@ -253,8 +257,7 @@ func (h *BotHandler) handleTextReply(ctx context.Context, b *bot.Bot, update *mo
 	}
 }
 
-// 处理 Inline 按钮点击的回调
-// 处理 Inline 按钮点击的回调
+// ✅ 处理 Inline 按钮点击的回调
 func (h *BotHandler) handleCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
 	// 必须回答 CallbackQuery
 	defer b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
@@ -282,8 +285,8 @@ func (h *BotHandler) handleCallback(ctx context.Context, b *bot.Bot, update *mod
 		return
 	}
 
-    // ✅ 修正部分：直接访问结构体字段
-    // 编译器说它是 InaccessibleMessage struct，那它一定有 Chat 和 MessageID
+    // ✅ 针对 InaccessibleMessage 的修正
+    // 直接访问结构体字段
     chatID := update.CallbackQuery.Message.Chat.ID
     messageID := update.CallbackQuery.Message.MessageID
 
@@ -311,7 +314,6 @@ func (h *BotHandler) handleCallback(ctx context.Context, b *bot.Bot, update *mod
 	}
 
     // 4. 编辑消息
-    // 使用刚才获取到的 messageID
     b.EditMessageText(ctx, &bot.EditMessageTextParams{
         ChatID:    chatID,
         MessageID: messageID, 
