@@ -35,6 +35,9 @@ type Config struct {
 	DanbooruLimit int
 	DanbooruUsername string 
 	DanbooruAPIKey   string 
+
+	CosineTags        []string // 要爬取的标签列表，例如 "原神,崩坏星穹铁道"
+	CosineLimitPerTag int      // 每个标签限制爬取的数量
 }
 
 func Load() *Config {
@@ -53,13 +56,29 @@ func Load() *Config {
 	artistIDsStr := getEnv("PIXIV_ARTIST_IDS", "")
 	var artistIDs []string
 	if artistIDsStr != "" {
-		// 支持逗号或换行分隔
 		parts := strings.FieldsFunc(artistIDsStr, func(r rune) bool {
 			return r == ',' || r == '\n'
 		})
 		for _, p := range parts {
 			if strings.TrimSpace(p) != "" {
 				artistIDs = append(artistIDs, strings.TrimSpace(p))
+			}
+		}
+	}
+
+	// 👇 【新增】读取 Cosine 配置
+	cosineLimit, _ := strconv.Atoi(getEnv("COSINE_LIMIT_PER_TAG", "50")) // 默认 50 张
+	
+	cosineTagsStr := getEnv("COSINE_TAGS", "原神") // 默认只爬"原神"
+	var cosineTags []string
+	if cosineTagsStr != "" {
+		// 支持逗号或换行分隔
+		parts := strings.FieldsFunc(cosineTagsStr, func(r rune) bool {
+			return r == ',' || r == '\n'
+		})
+		for _, p := range parts {
+			if strings.TrimSpace(p) != "" {
+				cosineTags = append(cosineTags, strings.TrimSpace(p))
 			}
 		}
 	}
@@ -76,6 +95,8 @@ func Load() *Config {
 		YandeLimit:     yandeLimit,
 		YandeTags:      getEnv("YANDE_TAGS", "order:random"),
 		PixivArtistIDs: artistIDs,
+		CosineTags:        cosineTags,
+		CosineLimitPerTag: cosineLimit,
 	}
 
 	// 解析 Kemono 多平台配置
