@@ -44,6 +44,7 @@ type BotHandler struct {
 func NewBot(cfg *config.Config, db *database.D1Client) (*BotHandler, error) {
 	opts := []bot.Option{
 		bot.WithDefaultHandler(func(ctx context.Context, b *bot.Bot, update *models.Update) {
+            // 默认不做任何事，防止多重触发
 		}),
 	}
 
@@ -54,22 +55,19 @@ func NewBot(cfg *config.Config, db *database.D1Client) (*BotHandler, error) {
 
 	h := &BotHandler{API: b, Cfg: cfg, DB: db, Sessions: make(map[int64]*UserSession)}
 
-	// 注册 /save 命令
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/save", bot.MatchTypeExact, h.handleSave)
+    // ---------------------------------------------------------
+    // ✅ 重新梳理 Handler 注册，防止冲突
+    // ---------------------------------------------------------
 
-	// 监听所有文本消息
-	b.RegisterHandler(bot.HandlerTypeMessageText, "", bot.MatchTypePrefix, h.handleTextReply)
-
-	// ✅ 监听按钮回调
+	// 1. 优先处理按钮回调 (Callback Query)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, "", bot.MatchTypePrefix, h.handleTagCallback)
 
-	// 其他 Handlers
-	b.RegisterHandler(bot.HandlerTypeMessageText, "", bot.MatchTypePrefix, h.handleManual)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "", bot.MatchTypePrefix, func(ctx context.Context, b *bot.Bot, update *models.Update) {
-		if update.Message != nil && len(update.Message.Photo) > 0 {
-			h.handleManual(ctx, b, update)
-		}
-	})
+	// 2. 注册具体指令 /save
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/save", bot.MatchTypeExact, h.handleSave)
+
+	// 3. 统一消息入口：处理 图片 OR 文本回复 (/title, /no)
+    //    使用 MatchTypePrefix + "" 匹配所有文本/图片消息，然后在函数内部判断
+	b.RegisterHandler(bot.HandlerTypeMessageText, "", bot.MatchTypePrefix, h.handleMainRouter)
 
 	return h, nil
 }
@@ -78,89 +76,34 @@ func (h *BotHandler) Start(ctx context.Context) {
 	h.API.Start(ctx)
 }
 
-// ProcessAndSend
-func (h *BotHandler) ProcessAndSend(ctx context.Context, imgData []byte, postID, tags, caption, source string, width, height int) {
-	if h.DB.History[postID] {
-		log.Printf("⏭️ Skip %s: already in history", postID)
-		return
-	}
+// ✅ 统一路由：根据消息类型分发
+func (h *BotHandler) handleMainRouter(ctx context.Context, b *bot.Bot, update *models.Update) {
+    if update.Message == nil {
+        return
+    }
 
-	const MaxPhotoSize = 9 * 1024 * 1024
-	finalData := imgData
+    // A. 如果是图片 -> 进入新图片处理流程
+    if len(update.Message.Photo) > 0 {
+        h.handleNewPhoto(ctx, b, update)
+        return
+    }
 
-	if int64(len(imgData)) > MaxPhotoSize {
-		log.Printf("⚠️ Image %s is too large (%.2f MB), compressing...", postID, float64(len(imgData))/1024/1024)
-		compressed, err := compressImage(imgData, MaxPhotoSize)
-		if err != nil {
-			log.Printf("❌ Compression failed: %v. Trying original...", err)
-		} else {
-			finalData = compressed
-		}
-	}
-
-	params := &bot.SendPhotoParams{
-		ChatID:  h.Cfg.ChannelID,
-		Photo:   &models.InputFileUpload{Filename: source + ".jpg", Data: bytes.NewReader(finalData)},
-		Caption: caption,
-	}
-
-	msg, err := h.API.SendPhoto(ctx, params)
-	if err != nil {
-		log.Printf("❌ Telegram Send Failed [%s]: %v", postID, err)
-		return
-	}
-
-	if len(msg.Photo) == 0 {
-		return
-	}
-	fileID := msg.Photo[len(msg.Photo)-1].FileID
-
-	err = h.DB.SaveImage(postID, fileID, caption, tags, source, width, height)
-	if err != nil {
-		log.Printf("❌ D1 Save Failed: %v", err)
-	} else {
-		log.Printf("✅ Saved: %s (%dx%d)", postID, width, height)
-	}
+    // B. 如果是文本 -> 检查是否是指令回复
+    if update.Message.Text != "" {
+        h.handleTextReply(ctx, b, update)
+        return
+    }
 }
 
-func (h *BotHandler) PushHistoryToCloud() {
-	if h.DB != nil {
-		h.DB.PushHistory()
-	}
-}
-
-func (h *BotHandler) handleSave(ctx context.Context, b *bot.Bot, update *models.Update) {
-	userID := update.Message.From.ID
-
-	if userID != 8040798522 && userID != 6874581126 {
-		log.Printf("⛔ Unauthorized /save attempt from UserID: %d", userID)
-		return
-	}
-
-	log.Printf("💾 Manual save triggered by UserID: %d", userID)
-
-	if h.DB != nil {
-		h.DB.PushHistory()
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   "✅ History successfully saved to Cloudflare D1!",
-		})
-	} else {
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   "❌ Database client is not initialized.",
-		})
-	}
-}
-
-func (h *BotHandler) handleManual(ctx context.Context, b *bot.Bot, update *models.Update) {
-	if update.Message == nil || len(update.Message.Photo) == 0 {
-		return
-	}
+// 处理新收到的图片
+func (h *BotHandler) handleNewPhoto(ctx context.Context, b *bot.Bot, update *models.Update) {
 	userID := update.Message.From.ID
 	photo := update.Message.Photo[len(update.Message.Photo)-1]
 
 	caption := update.Message.Caption
+    
+    // 🛠️ 修复多图逻辑：如果这只是多图中的一张且没标题，尽量不要覆盖掉正在进行的会话
+    // 简单起见，如果 caption 为空，我们暂时给个默认值，但在会话中标记
 	if caption == "" {
 		caption = "MtcACG:TG"
 	}
@@ -176,29 +119,29 @@ func (h *BotHandler) handleManual(ctx context.Context, b *bot.Bot, update *model
 
 	b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
-		Text:   fmt.Sprintf("📩 收到图片了,Daishiki喵！\n\n当前标题：\n%s\n\n主人要自定义标题吗,喵？\n1️和我说 `/title 就可以使用新标题了喵`\n2️说 `/no` 那就只能使用原标题的说,喵", caption),
+		Text:   fmt.Sprintf("📩 收到图片了,Daishiki喵！\n\n当前标题：\n%s\n\n主人要自定义标题吗,喵？\n1️和我说 `/title` 就可以使用新标题了喵\n2️说 `/no` 那就只能使用原标题的说,喵", caption),
 		ReplyParameters: &models.ReplyParameters{
 			MessageID: update.Message.ID,
 		},
 	})
 }
 
+// 处理文本回复 (/title, /no)
 func (h *BotHandler) handleTextReply(ctx context.Context, b *bot.Bot, update *models.Update) {
-	if update.Message == nil {
-		return
-	}
 	userID := update.Message.From.ID
 	session, exists := h.Sessions[userID]
 
-	if !exists || session.State == StateNone {
+	// 1. 如果没有会话，或者状态不对，说明用户可能在瞎聊，直接忽略
+	if !exists || session.State != StateWaitingTitle {
 		return
 	}
 
 	text := update.Message.Text
 
 	if text == "/no" {
-		// 使用默认标题
+		// 用户确认使用原标题
 	} else if strings.HasPrefix(text, "/title ") {
+        // 用户修改标题
 		newTitle := strings.TrimSpace(strings.TrimPrefix(text, "/title "))
 		if newTitle != "" {
 			session.Caption = newTitle
@@ -210,6 +153,8 @@ func (h *BotHandler) handleTextReply(ctx context.Context, b *bot.Bot, update *mo
 			return
 		}
 	} else {
+        // 输入的既不是 /no 也不是 /title，提示错误
+        // 注意：这里我们只拦截确实像是在回复的文本。如果用户随便发个 "哈"，也会提示错误，这在交互中是可以接受的
 		b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: update.Message.Chat.ID,
 			Text:   "⚠️ 格式错误,喵~！\n- 确认原标题请回复 `/no`喵~\n- 自定义标题请回复 `/title 新标题`喵~",
@@ -217,6 +162,7 @@ func (h *BotHandler) handleTextReply(ctx context.Context, b *bot.Bot, update *mo
 		return
 	}
 
+    // 状态流转 -> 等待标签
 	session.State = StateWaitingTag
 
 	kb := &models.InlineKeyboardMarkup{
@@ -228,7 +174,6 @@ func (h *BotHandler) handleTextReply(ctx context.Context, b *bot.Bot, update *mo
 		},
 	}
 
-	// ✅ 已修复隐患：去掉了 ParseMode，防止特殊字符报错
 	b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      update.Message.Chat.ID,
 		Text:        fmt.Sprintf("✅ 狗修金,标题确认好了喵~: \n%s\n\n请主人狠狠点击下方按钮选择标签,打上只属于主人的标记吧。：", session.Caption),
@@ -236,6 +181,7 @@ func (h *BotHandler) handleTextReply(ctx context.Context, b *bot.Bot, update *mo
 	})
 }
 
+// 处理按钮回调
 func (h *BotHandler) handleTagCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
 	userID := update.CallbackQuery.From.ID
 	session, exists := h.Sessions[userID]
@@ -260,13 +206,12 @@ func (h *BotHandler) handleTagCallback(ctx context.Context, b *bot.Bot, update *
 		chatID := update.CallbackQuery.Message.Chat.ID
 
 		h.processForwardUpload(ctx, b, chatID, session, tag)
-		delete(h.Sessions, userID)
+		delete(h.Sessions, userID) // 上传完清除会话
 
-		// ✅ 核心修复：Message.ID 改为 Message.MessageID
-		// ✅ 已修复隐患：去掉了 ParseMode
+		// ✅ 修改了 MessageID 字段，防止报错
 		b.EditMessageText(ctx, &bot.EditMessageTextParams{
 			ChatID:    chatID,
-			MessageID: update.CallbackQuery.Message.MessageID, // 👈 这一行是报错的关键修复
+			MessageID: update.CallbackQuery.Message.MessageID, 
 			Text:      fmt.Sprintf("✅ 已处理: \n%s\n\nTags: %s", session.Caption, tag),
 		})
 	}
@@ -276,6 +221,7 @@ func (h *BotHandler) handleTagCallback(ctx context.Context, b *bot.Bot, update *
 	})
 }
 
+// 核心上传逻辑
 func (h *BotHandler) processForwardUpload(ctx context.Context, b *bot.Bot, chatID int64, session *UserSession, tag string) {
 	msg, err := b.SendPhoto(ctx, &bot.SendPhotoParams{
 		ChatID:  h.Cfg.ChannelID,
@@ -307,6 +253,30 @@ func (h *BotHandler) processForwardUpload(ctx context.Context, b *bot.Bot, chatI
 			ReplyParameters: &models.ReplyParameters{
 				MessageID: session.MessageID,
 			},
+		})
+	}
+}
+
+func (h *BotHandler) handleSave(ctx context.Context, b *bot.Bot, update *models.Update) {
+	userID := update.Message.From.ID
+
+	if userID != 8040798522 && userID != 6874581126 {
+		log.Printf("⛔ Unauthorized /save attempt from UserID: %d", userID)
+		return
+	}
+
+	log.Printf("💾 Manual save triggered by UserID: %d", userID)
+
+	if h.DB != nil {
+		h.DB.PushHistory()
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: update.Message.Chat.ID,
+			Text:   "✅ History successfully saved to Cloudflare D1!",
+		})
+	} else {
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: update.Message.Chat.ID,
+			Text:   "❌ Database client is not initialized.",
 		})
 	}
 }
