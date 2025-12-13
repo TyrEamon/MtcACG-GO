@@ -76,7 +76,11 @@ func (h *BotHandler) Start(ctx context.Context) {
 	h.API.Start(ctx)
 }
 
-// ✅ 统一路由：根据消息类型分发
+// =====================================================================================
+// ✅ 核心逻辑路由 (解决冲突的关键)
+// =====================================================================================
+
+// 统一路由：根据消息类型分发
 func (h *BotHandler) handleMainRouter(ctx context.Context, b *bot.Bot, update *models.Update) {
     if update.Message == nil {
         return
@@ -103,7 +107,6 @@ func (h *BotHandler) handleNewPhoto(ctx context.Context, b *bot.Bot, update *mod
 	caption := update.Message.Caption
     
     // 🛠️ 修复多图逻辑：如果这只是多图中的一张且没标题，尽量不要覆盖掉正在进行的会话
-    // 简单起见，如果 caption 为空，我们暂时给个默认值，但在会话中标记
 	if caption == "" {
 		caption = "MtcACG:TG"
 	}
@@ -153,8 +156,6 @@ func (h *BotHandler) handleTextReply(ctx context.Context, b *bot.Bot, update *mo
 			return
 		}
 	} else {
-        // 输入的既不是 /no 也不是 /title，提示错误
-        // 注意：这里我们只拦截确实像是在回复的文本。如果用户随便发个 "哈"，也会提示错误，这在交互中是可以接受的
 		b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: update.Message.Chat.ID,
 			Text:   "⚠️ 格式错误,喵~！\n- 确认原标题请回复 `/no`喵~\n- 自定义标题请回复 `/title 新标题`喵~",
@@ -208,7 +209,7 @@ func (h *BotHandler) handleTagCallback(ctx context.Context, b *bot.Bot, update *
 		h.processForwardUpload(ctx, b, chatID, session, tag)
 		delete(h.Sessions, userID) // 上传完清除会话
 
-		// ✅ 修改了 MessageID 字段，防止报错
+		// ✅ MessageID 字段修复
 		b.EditMessageText(ctx, &bot.EditMessageTextParams{
 			ChatID:    chatID,
 			MessageID: update.CallbackQuery.Message.MessageID, 
@@ -257,6 +258,67 @@ func (h *BotHandler) processForwardUpload(ctx context.Context, b *bot.Bot, chatI
 	}
 }
 
+// =====================================================================================
+// ✅ 补回被遗漏的公共方法 (ProcessAndSend, PushHistoryToCloud, compressImage)
+// =====================================================================================
+
+// ProcessAndSend 供爬虫模块调用
+func (h *BotHandler) ProcessAndSend(ctx context.Context, imgData []byte, postID, tags, caption, source string, width, height int) {
+	// 1. 先检查内存历史，如果有了就直接跳过
+	if h.DB.History[postID] {
+		log.Printf("⏭️ Skip %s: already in history", postID)
+		return
+	}
+
+	// 2. 检查图片大小，如果超过 9MB 则压缩 (Telegram 限制 10MB)
+	const MaxPhotoSize = 9 * 1024 * 1024 
+	finalData := imgData
+
+	if int64(len(imgData)) > MaxPhotoSize {
+		log.Printf("⚠️ Image %s is too large (%.2f MB), compressing...", postID, float64(len(imgData))/1024/1024)
+		compressed, err := compressImage(imgData, MaxPhotoSize)
+		if err != nil {
+			log.Printf("❌ Compression failed: %v. Trying original...", err)
+		} else {
+			finalData = compressed
+		}
+	}
+
+	// 3. 发送到 Telegram
+	params := &bot.SendPhotoParams{
+		ChatID:  h.Cfg.ChannelID,
+		Photo:   &models.InputFileUpload{Filename: source + ".jpg", Data: bytes.NewReader(finalData)},
+		Caption: caption,
+	}
+
+	msg, err := h.API.SendPhoto(ctx, params)
+	if err != nil {
+		log.Printf("❌ Telegram Send Failed [%s]: %v", postID, err)
+		return
+	}
+
+	if len(msg.Photo) == 0 {
+		return 
+	}
+	fileID := msg.Photo[len(msg.Photo)-1].FileID
+
+	// 4. 存入 D1 数据库
+	err = h.DB.SaveImage(postID, fileID, caption, tags, source, width, height)
+	if err != nil {
+		log.Printf("❌ D1 Save Failed: %v", err)
+	} else {
+		log.Printf("✅ Saved: %s (%dx%d)", postID, width, height)
+	}
+}
+
+// PushHistoryToCloud 供爬虫模块或手动调用
+func (h *BotHandler) PushHistoryToCloud() {
+	if h.DB != nil {
+		h.DB.PushHistory()
+	}
+}
+
+// handleSave 手动触发保存
 func (h *BotHandler) handleSave(ctx context.Context, b *bot.Bot, update *models.Update) {
 	userID := update.Message.From.ID
 
