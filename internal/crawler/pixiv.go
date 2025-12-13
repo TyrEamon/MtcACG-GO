@@ -93,7 +93,7 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 					// 基础去重 (只要发过第一张，就算这个ID处理过了)
 					// 注意：如果是多图，我们在下面会处理，这里只防重复抓同一个作品
 					mainPid := fmt.Sprintf("pixiv_%d_p0", id)
-					if db.History[mainPid] {
+					if db.CheckExists(mainPid) {
 						continue
 					}
 
@@ -148,7 +148,7 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 						subPid := fmt.Sprintf("pixiv_%d_p%d", id, i)
 						
 						// 双重检查：防止中断后重启重复发后面几张
-						if db.History[subPid] {
+						if db.CheckExists(subPid) {
 							continue
 						}
 
@@ -172,7 +172,7 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 						time.Sleep(4 * time.Second) // 慢一点，防止被 ban
 					}
 					
-					if db.CheckExists(mainPid) {
+					db.PushHistory()
 					
 					count++
 				}
