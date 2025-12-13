@@ -166,12 +166,10 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 							detail.Body.UserName, 
 							strings.ReplaceAll(tagsStr, " ", " #"))
 
-						// 发送并存库 (带宽高!)
-						// 注意：这里的 source 我们传 "pixiv"，但 filename 最好带上 p0
 						// ProcessAndSend 内部会用 subPid 作为 ID 存入 D1
 						botHandler.ProcessAndSend(ctx, imgResp.Body(), subPid, tagsStr, caption, "pixiv", page.Width, page.Height)
 						
-						time.Sleep(3 * time.Second) // 慢一点，防止被 ban
+						time.Sleep(4 * time.Second) // 慢一点，防止被 ban
 					}
 					
 					db.PushHistory()
@@ -181,7 +179,7 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 			}
 
 			
-			log.Println("😴 Pixiv Done. Sleeping 10m...")
+			log.Println("😴 Pixiv Done. Sleeping 180m...")
 			time.Sleep(180 * time.Minute)
 		}
 	}
