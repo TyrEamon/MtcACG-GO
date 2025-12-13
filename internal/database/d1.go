@@ -103,3 +103,60 @@ func (d *D1Client) SaveImage(postID, fileID, caption, tags, source string, width
 	d.History[postID] = true
 	return nil
 }
+
+// CheckExists 检查图片是否存在 (内存缓存 -> D1 实时查询)
+// ✅ 请把这个方法加到 d1.go 的最后面
+func (d *D1Client) CheckExists(postID string) bool {
+	// 1. 第一道防线：查内存 (速度快)
+	if d.History[postID] {
+		return true
+	}
+
+	// 2. 第二道防线：实时查 D1 数据库 (准确)
+	// 构造查询 SQL：只查是否存在，不查具体数据，效率高
+	sql := "SELECT 1 FROM images WHERE id = ? LIMIT 1"
+	body := map[string]interface{}{
+		"sql":    sql,
+		"params": []interface{}{postID},
+	}
+
+	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/d1/database/%s/query",
+		d.cfg.CF_AccountID, d.cfg.D1_DatabaseID)
+
+	resp, err := d.client.R().
+		SetHeader("Authorization", "Bearer "+d.cfg.CF_APIToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post(url)
+
+	if err != nil {
+		log.Printf("⚠️ D1 Check Error: %v", err)
+		// 网络错误时，为了防止重复发送，这里怎么处理取决于你：
+		// return false // 倾向于“宁可发重，不可漏发”
+		// return true  // 倾向于“宁可漏发，不可发重”
+		return false 
+	}
+
+	// 3. 解析结果
+	// Cloudflare D1 的返回结果中，如果没有找到数据，results 字段是空的： "results":[]
+	// 我们简单粗暴判断字符串即可，不用额外引入 encoding/json
+	respStr := resp.String()
+	
+	// 去除空格防止格式差异
+	cleanStr := strings.ReplaceAll(respStr, " ", "")
+	
+	// 如果包含 "results":[] 说明数据库里也没有 -> 返回 false
+	if strings.Contains(cleanStr, "\"results\":[]") {
+		return false
+	}
+
+	// 如果包含 "success":true 且 results 不为空 -> 说明数据库里有！
+	if strings.Contains(cleanStr, "\"success\":true") {
+		// 查到了！赶紧补回内存，下次就不用查网路了
+		d.History[postID] = true
+		return true
+	}
+
+	return false
+}
+
