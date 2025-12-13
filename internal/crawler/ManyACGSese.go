@@ -98,7 +98,7 @@ func StartManyACGSese(ctx context.Context, cfg *config.Config, db *database.D1Cl
 
 			// ✅ 批次结束后，休息 10 分钟
 			log.Println("😴 Sese Batch Done. Sleeping 10m...")
-			time.Sleep(10 * time.Minute)
+			time.Sleep(5 * time.Minute)
 		}
 	}
 }
