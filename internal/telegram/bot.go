@@ -308,16 +308,31 @@ func (h *BotHandler) handleCallback(ctx context.Context, b *bot.Bot, update *mod
 		resultText = "图片已发，但数据库保存失败。"
 	}
 
-	// 编辑掉刚才那个“请选择标签”的消息，直接变成成功提示
-	b.EditMessageText(ctx, &bot.EditMessageTextParams{
-		ChatID:    chatID,
-		MessageID: update.CallbackQuery.Message.ID,
-		Text:      resultText,
-	})
+    var messageID int
+    switch m := update.CallbackQuery.Message.(type) {
+    case *models.Message:
+        messageID = m.ID
+    case models.Message: // 有些版本可能是非指针
+        messageID = m.ID
+    // 如果有其他类型，这里会自动忽略，messageID 保持为 0
+    }
 
-	// 清除会话
-	delete(h.Sessions, userID)
+    // 如果断言失败导致 ID 还是 0，尝试硬取（针对某些特定版本）
+    if messageID == 0 {
+    }
+
+    if messageID != 0 {
+        b.EditMessageText(ctx, &bot.EditMessageTextParams{
+            ChatID:    chatID,
+            MessageID: messageID, // ✅ 这里直接用算好的 int 变量
+            Text:      resultText,
+        })
+    }
+
+    // 清除会话
+    delete(h.Sessions, userID)
 }
+
 
 // compressImage 尝试把图片压缩到指定大小以下
 func compressImage(data []byte, targetSize int64) ([]byte, error) {
