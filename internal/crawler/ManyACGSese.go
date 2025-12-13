@@ -7,7 +7,8 @@ import (
 	"image"
 	_ "image/gif"  // 支持 GIF
 	_ "image/jpeg" // 支持 JPG
-	_ "image/png"  // 支持 PNG
+	_ "image/png"// 支持 PNG
+	_ "golang.org/x/image/webp"
 	"log"
 	"my-bot-go/internal/config"
 	"my-bot-go/internal/database"
