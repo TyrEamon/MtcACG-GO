@@ -58,6 +58,10 @@ func NewBot(cfg *config.Config, db *database.D1Client) (*BotHandler, error) {
 	// ✅ 新增：监听所有文本消息，用于处理交互式问答
 	b.RegisterHandler(bot.HandlerTypeMessageText, "", bot.MatchTypePrefix, h.handleTextReply)
 
+		// ✅ 新增：监听所有文本消息，用于处理交互式问答
+	b.RegisterHandler(bot.HandlerTypeMessageText, "", bot.MatchTypePrefix, h.handleTextReply)
+
+
 	// 其他 Handlers
 	b.RegisterHandler(bot.HandlerTypeMessageText, "", bot.MatchTypePrefix, h.handleManual)
 	b.RegisterHandler(bot.HandlerTypeMessageText, "", bot.MatchTypePrefix, func(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -180,15 +184,15 @@ func (h *BotHandler) handleManual(ctx context.Context, b *bot.Bot, update *model
 		MessageID:   update.Message.ID,
 	}
 
-	// 询问用户
+	// 询问用户 (去掉了 ParseModeMarkdown 防止原标题里的特殊符号导致报错)
 	b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
-		Text:   fmt.Sprintf("📩 收到图片！当前标题为：\n`%s`\n\n是否需要自定义标题？\n1️⃣ 回复新标题自定义\n2️⃣ 回复 'no' 或 '否' 使用默认值", caption),
-		ParseMode: models.ParseModeMarkdown,
+		Text:   fmt.Sprintf("📩 收到图片！\n\n当前标题：\n%s\n\n是否需要自定义标题？\n1️⃣ 回复 `/title 新标题`\n2️⃣ 回复 `no` 使用原标题", caption),
 		ReplyParameters: &models.ReplyParameters{
 			MessageID: update.Message.ID,
 		},
 	})
+
 }
 
 func (h *BotHandler) handleTextReply(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -210,55 +214,76 @@ func (h *BotHandler) handleTextReply(ctx context.Context, b *bot.Bot, update *mo
 
 	// 阶段 1: 确认标题
 	case StateWaitingTitle:
-		if text != "no" && text != "否" {
-			session.Caption = text // 用户输入了新标题
+		if text == "no" || text == "否" {
+			// 使用默认标题，不做修改
+		} else if len(text) > 7 && text[:7] == "/title " {
+			// 提取 /title 后面的内容
+			session.Caption = text[7:]
+		} else {
+			// 格式错误，拦截并提示
+			b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: update.Message.Chat.ID,
+				Text:   "⚠️ 格式错误！\n- 使用原标题请回复 `no`\n- 自定义标题请回复 `/title 新标题`",
+				ParseMode: models.ParseModeMarkdown,
+			})
+			return
 		}
 
 		// 更新状态 -> 等待选标签
 		session.State = StateWaitingTag
 
-		// 发送键盘按钮供选择
-		kb := &models.ReplyKeyboardMarkup{
-			Keyboard: [][]models.KeyboardButton{
-				{{Text: "TGC-SFW"}, {Text: "TGC-NSFW"}},
+		// 发送 Inline 按钮供选择
+		kb := &models.InlineKeyboardMarkup{
+			InlineKeyboard: [][]models.InlineKeyboardButton{
+				{
+					{Text: "🟢 TGC-SFW", CallbackData: "tag_sfw"},
+					{Text: "🔞 TGC-NSFW", CallbackData: "tag_nsfw"},
+				},
 			},
-			OneTimeKeyboard: true,
-			ResizeKeyboard:  true,
 		}
 
 		b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID:      update.Message.Chat.ID,
-			Text:        fmt.Sprintf("✅ 标题已确认: `%s`\n请选择标签类型：", session.Caption),
+			Text:        fmt.Sprintf("✅ 标题已确认: `%s`\n请点击下方按钮选择标签：", session.Caption),
 			ParseMode:   models.ParseModeMarkdown,
 			ReplyMarkup: kb,
 		})
-
-	// 阶段 2: 选择标签并上传
-	case StateWaitingTag:
-		tag := ""
-		if text == "TGC-SFW" {
-			tag = "#TGC #SFW"
-		} else if text == "TGC-NSFW" {
-			tag = "#TGC #NSFW #R18"
-		} else {
-			b.SendMessage(ctx, &bot.SendMessageParams{
-				ChatID: update.Message.Chat.ID,
-				Text:   "⚠️ 请点击下方按钮选择标签！",
-			})
-			return
-		}
-
-		// ✅ 标签合法，开始上传流程
-		h.processForwardUpload(ctx, b, update, session, tag)
-
-		// 流程结束，清除会话状态
-		delete(h.Sessions, userID)
+        
+        // 注意：这里删除了 case StateWaitingTag 的逻辑，因为这部分逻辑移到 callback 处理了
 	}
 }
 
-// 最终上传函数
-func (h *BotHandler) processForwardUpload(ctx context.Context, b *bot.Bot, update *models.Update, session *UserSession, tag string) {
-	chatID := update.Message.Chat.ID
+// 处理 Inline 按钮点击的回调
+func (h *BotHandler) handleCallback(ctx context.Context, b *bot.Bot, update *models.Update) {
+	// 必须回答 CallbackQuery，否则按钮会一直转圈
+	defer b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+		CallbackQueryID: update.CallbackQuery.ID,
+	})
+
+	userID := update.CallbackQuery.From.ID
+	session, exists := h.Sessions[userID]
+	
+	// 简单校验：如果没有会话，或者状态不是等待标签，就提示过期
+	if !exists || session.State != StateWaitingTag {
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: update.CallbackQuery.Message.Chat.ID,
+			Text:   "⚠️ 会话已过期，请重新转发图片。",
+		})
+		return
+	}
+
+	data := update.CallbackQuery.Data
+	tag := ""
+
+	if data == "tag_sfw" {
+		tag = "#TGC #SFW"
+	} else if data == "tag_nsfw" {
+		tag = "#TGC #NSFW #R18"
+	} else {
+		return // 未知按钮
+	}
+
+	chatID := update.CallbackQuery.Message.Chat.ID
 
 	// 1. 发送到频道
 	msg, err := b.SendPhoto(ctx, &bot.SendPhotoParams{
@@ -268,36 +293,30 @@ func (h *BotHandler) processForwardUpload(ctx context.Context, b *bot.Bot, updat
 	})
 
 	if err != nil {
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID:      chatID,
-			Text:        "❌ 发送失败，喵~ (" + err.Error() + ")",
-			ReplyMarkup: &models.ReplyKeyboardRemove{},
-		})
+		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: "❌ 发送失败: " + err.Error()})
 		return
 	}
 
 	// 2. 存入 D1 数据库
 	postID := fmt.Sprintf("manual_%d", msg.ID)
 	finalFileID := msg.Photo[len(msg.Photo)-1].FileID
-
 	err = h.DB.SaveImage(postID, finalFileID, session.Caption, tag, "manual", session.Width, session.Height)
 
+	// 3. 反馈给用户
+	resultText := "上传成功，喵~ 🐱"
 	if err != nil {
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID:      chatID,
-			Text:        "❌ 图片已发频道，但数据库保存失败，喵~",
-			ReplyMarkup: &models.ReplyKeyboardRemove{},
-		})
-	} else {
-		b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID:      chatID,
-			Text:        "上传成功，喵~ 🐱",
-			ReplyMarkup: &models.ReplyKeyboardRemove{},
-			ReplyParameters: &models.ReplyParameters{
-				MessageID: session.MessageID,
-			},
-		})
+		resultText = "图片已发，但数据库保存失败。"
 	}
+
+	// 编辑掉刚才那个“请选择标签”的消息，直接变成成功提示
+	b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    chatID,
+		MessageID: update.CallbackQuery.Message.ID,
+		Text:      resultText,
+	})
+
+	// 清除会话
+	delete(h.Sessions, userID)
 }
 
 // compressImage 尝试把图片压缩到指定大小以下
