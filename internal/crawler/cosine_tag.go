@@ -26,6 +26,7 @@ type CosineImage struct {
 	RawURL    string   `json:"rawurl"`    // 原图链接
 	ThumbURL  string   `json:"thumburl"`  // 缩略图
 	Extension string   `json:"extension"`
+	Filename  string   `json:"filename"`
 	Tags      []string `json:"tags"`
 	Width     int      `json:"width"`     // 接口里包含了宽高
 	Height    int      `json:"height"`
