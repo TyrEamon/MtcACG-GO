@@ -65,8 +65,7 @@ func StartManyACG(ctx context.Context, cfg *config.Config, db *database.D1Client
 					// 构造去重 ID，因为 ID 是字符串，直接用
 					pid := fmt.Sprintf("manyacg_%s", item.ID)
 
-					if db.History[pid] {
-						// log.Printf("⏭️ ManyACG %s 已存在，跳过", item.ID)
+                    if db.CheckExists(pid) { // ✅ 改为双重校验
 						continue
 					}
 
