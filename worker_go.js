@@ -134,7 +134,7 @@ const SIDEBAR_HTML = `
 
     <a href="/r18" class="flex items-center p-3 text-red-300 hover:bg-red-500/10 rounded-lg transition group">
       <svg class="w-5 h-5 mr-3 text-red-400 group-hover:text-red-200" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-      <span class="font-bold">里世界 · R-18</span>
+      <span class="font-bold">里世界 · 纯R18|慎</span>
     </a>
     
     <a href="/about" class="flex items-center p-3 text-gray-300 hover:bg-white/10 rounded-lg transition">
@@ -275,7 +275,7 @@ async function handleDetail(id, env) {
         <!-- 新增：里世界入口 -->
         <a href="/r18" class="flex items-center p-3 text-red-300 hover:bg-red-500/10 rounded-lg transition group">
           <svg class="w-5 h-5 mr-3 text-red-400 group-hover:text-red-200" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-          <span class="font-bold">里世界 · R-18</span>
+          <span class="font-bold">里世界 · 纯R18|慎</span>
         </a>    
         <a href="/about" class="flex items-center p-3 text-gray-300 hover:bg-white/10 rounded-lg transition">
            <svg class="w-5 h-5 mr-3 text-gray-300" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-linecap="round" stroke-linejoin="round"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 8.5v.01M11 11h1v5h1"/></svg>
@@ -728,10 +728,12 @@ function htmlHome() {
     let done = false;
     let colCount = window.innerWidth < 768 ? 2 : (window.innerWidth < 1200 ? 3 : 4);
     let cols = [];
+    let colHeights = []; // 用于记录每列的预估高度
 
     function initMasonry() {
       masonry.innerHTML = '';
       cols = [];
+      colHeights = new Array(colCount).fill(0); // <--- 新增这行，重置高度
       for(let i=0; i<colCount; i++) {
         const div = document.createElement('div');
         div.className = 'masonry-col';
@@ -775,31 +777,27 @@ function htmlHome() {
           return;
         }
 
-        if (offset === 0 && data.length > 0) {
-          bgLayer.style.backgroundImage = \`url(/image/\${data[0].file_name})\`;
-          bgLayer.style.opacity = '1';
-        }
 
         let colHeights = new Array(colCount).fill(0);
         
         // 首页屏蔽列表
-        const blockKeywords = [
-             'R-18', 'NSFW', 'Hentai', '血腥', 'R18','性爱','性交','淫','乱伦','裸胸','露点',
-             '调教','捆绑','触手','高潮','喷水','阿黑颜','颜射','后宫','痴汉','NTR','3P','Boobs',
-             'Tits','Nipples','Breast','强暴','做爱','自慰','援交','喷水','Creampie','Cum','Bukkake','Sex','Fuck',
-             'Blowjob','口交','Handjob','Paizuri','乳交','Cunnilingus','Fellatio','Masturbation','Pussy','Vagina',
-             'Penis','Dick','Cock','Genitals','Pubic','阴部','阴茎','私处','白虎','爆乳','Breast','Nude','Topless','Ahegao',
-             '高潮脸','X-ray','断面图','Mind Break','恶堕','坏掉','透视','Futa','扶她','双性','Tentacle','BDSM','Bondage',
-             '束缚','Scat','Pregnant','妊娠','怀孕','异种','丸吞','破れタイツ','敗北','快楽堕ち','寝取られ','乳出し',
-             'Garter','Lingerie','Panty','Stockings','yande','ふたなり','輪姦','母子','近親','異種姦','孕ませ','緊縛',
-             '奴隷','悪堕ち','精神崩壊','セックス','中出し','顔射','イラマチオ','フェラ','パイズリ','手コキ','潮吹き','絶頂',
-             'アヘ顔','全裸','乳首','ペニス','ヴァギナ','クリトリス','近親','触手','レイプ','調教','スカトロ','ふたなり',
-             'パンツ下ろし'
+        const blockKeywords =[
+          'R-18', 'NSFW','Hentai','血腥','R18','性爱','性交','淫','乱伦','裸胸','露点',
+          '调教','捆绑','触手','高潮','喷水','阿黑颜','颜射','后宫','痴汉','NTR','3P','Boobs',
+          'Tits','Nipples','Breast','强暴','做爱','自慰','援交','喷水','Creampie','Cum','Bukkake','Sex','Fuck',
+          'Blowjob','口交','Handjob','Paizuri','乳交','Cunnilingus','Fellatio','Masturbation','Pussy','Vagina',
+          'Penis','Dick','Cock','Genitals','Pubic','阴部','阴茎','私处','白虎','爆乳','Breast','Nude','Topless','Ahegao',
+          '高潮脸','X-ray','断面图','Mind Break','恶堕','坏掉','透视','Futa','扶她','双性','Tentacle','BDSM','Bondage',
+          '束缚','Scat','Pregnant','妊娠','怀孕','异种','丸吞','破れタイツ','敗北','快楽堕ち','寝取られ','乳出し',
+          'Garter','Lingerie','Panty','Stockings','ふたなり','輪姦','母子','近親','異種姦','孕ませ','緊縛',
+          '奴隷','悪堕ち','精神崩壊','セックス','中出し','顔射','イラマチオ','フェラ','パイズリ','手コキ','潮吹き','絶頂',
+          'アヘ顔','全裸','乳首','ペニス','ヴァギナ','クリトリス','近親','触手','レイプ','調教','スカトロ','ふたなり','パンツ下ろし',
+          'TG-forward',
         ];
 
         // 里世界展示列表（目前和屏蔽列表一致，你可以按需修改）
         const r18Keywords = [
-          'R-18', 'NSFW', 'Hentai', '血腥', 'R18','性爱','性交','淫','乱伦','裸胸','露点',
+          'R-18','NSFW','Hentai','血腥','R18','性爱','性交','淫','乱伦','裸胸','露点',
           '调教','捆绑','触手','高潮','喷水','阿黑颜','颜射','后宫','痴汉','NTR','3P','Boobs',
           'Tits','Nipples','Breast','强暴','做爱','自慰','援交','喷水','Creampie','Cum','Bukkake','Sex','Fuck',
           'Blowjob','口交','Handjob','Paizuri','乳交','Cunnilingus','Fellatio','Masturbation','Pussy','Vagina',
@@ -809,40 +807,69 @@ function htmlHome() {
           'パンツ下ろし','尻揉み','比基尼','裸足','School Swimsuit','アナル尻尾','Maid','Swimsuit','Ass','成人','成人','Pantyhose',
           'Garter','连裤袜','ロリ','Lingerie','Panty','Stockings','yande','ふたなり','輪姦','母子','近親','異種姦','孕ませ','緊縛',
           '奴隷','悪堕ち','精神崩壊','セックス','中出し','顔射','イラマチオ','フェラ','パイズリ','手コキ','潮吹き','絶頂',
-          'アヘ顔','全裸','乳首','ペニス','ヴァギナ','クリトリス','近親','触手','レイプ','調教','スカトロ','ふたなり',
+          'アヘ顔','全裸','乳首','ペニス','ヴァギナ','クリトリス','近親','触手','レイプ','調教','スカトロ','ふたなり','TG-forward'
         ]; 
+
+        // === 1. 新增智能检测函数（防误杀核心）===
+        // 放在 for 循环前面定义
+        function checkKeywords(text, keywords) {
+          return keywords.some(k => {
+            const key = k.toLowerCase();
+            // 如果是纯英文单词且长度 >1 (例如 Ass, Sex)，使用“单词边界”匹配
+            // 注意：这里用了四斜杠 \\\\b 是因为在 Worker 字符串里要转义两次
+            if (key.length > 1 && /^[a-z0-9]+$/i.test(key)) {
+               const reg = new RegExp('\\\\b' + key + '\\\\b', 'i'); 
+               return reg.test(text);
+            }
+            // 中文或特殊符号，保持原来的“包含即匹配”
+            return text.includes(key);
+          });
+        }
 
         const isR18Page = window.location.pathname === '/r18';
 
+        let validCount = 0; // 计数器：记录本页有多少张有效图
+
+        // 3. 循环主体
         for (const item of data) {
-          const textToCheck = ((item.caption || '') + (item.tags || '')).toLowerCase();
+          const textToCheck = ((item.caption || '') + ' ' + (item.tags || '')).toLowerCase();
           
+          let isHidden = false;
           if (isR18Page) {
-             // 里世界：用 r18Keywords 来决定“收进去”
-             const isR18Content = r18Keywords.some(k => textToCheck.includes(k.toLowerCase()));
-             if (!isR18Content) continue; 
+             // 里世界：如果不包含 R18 词，则隐藏
+             if (!checkKeywords(textToCheck, r18Keywords)) isHidden = true; 
           } else {
-             // 首页：用 blockKeywords 来“屏蔽”
-             const isSensitive = blockKeywords.some(k => textToCheck.includes(k.toLowerCase()));
-             if (hideR18 && isSensitive) continue;
+             // 首页：如果包含敏感词且开启屏蔽，则隐藏
+             if (hideR18 && checkKeywords(textToCheck, blockKeywords)) isHidden = true;
           }
 
-          const w = item.width || 3;
-          const h = item.height || 4;
-          // 注意：这里用了四个反斜杠来表示转义后的换行符匹配
-          const title = (item.caption || '').split('\\\\n')[0]; 
+          if (isHidden) continue;
 
-          let minH = colHeights[0];
-          let minIdx = 0;
-          for(let i=1; i<colCount; i++) {
-            if(cols[i].childElementCount < cols[minIdx].childElementCount) {
-              minIdx = i;
-            }
+          // 能走到这里，说明是有效图
+          validCount++;
+
+          // === ✅ 新增：安全的背景设置逻辑 ===
+          if (offset === 0 && validCount === 1) {
+              bgLayer.style.backgroundImage = \`url(/image/\${item.file_name})\`;
+              bgLayer.style.opacity = '1';
           }
+          // ================================
+
+         const w = item.width || 3;
+         const h = item.height || 4;
+         const title = (item.caption || '').split('\\\\n')[0]; 
+
+         let minH = colHeights[0];
+         // ✅ 新的逻辑（看预估高度）
+         let minIdx = 0;
+         for(let i=1; i<colCount; i++) {
+           if(colHeights[i] < colHeights[minIdx]) {
+             minIdx = i;
+           }
+         }
 
           const card = document.createElement('div');
           card.className = 'card';
-          // 注意：这里的反引号是转义过的 \`
           card.innerHTML = \`
             <a href="/detail/\${item.id}">
               <div class="card-inner">
@@ -852,11 +879,28 @@ function htmlHome() {
               </div>
             </a>\`;
           
-          cols[minIdx].appendChild(card);
+            cols[minIdx].appendChild(card);
+
+            // === ✅ 新增：更新列高度 ===
+            // 预估高度 = 图片长宽比 + 标题栏固定高度(大概0.5)
+            // 这里的 w 和 h 是你自己代码里提取的
+            const aspectRatio = (h / w) || 1.2; 
+            colHeights[minIdx] += aspectRatio;
+            // ========================  
         }
         
         offset += data.length;
-
+        
+        // === 修复版：自动补货逻辑 ===
+        if (!isR18Page && hideR18 && validCount < 5 && data.length >= 20) {
+          // 注意 validCount 和 data.length 前面的反斜杠 \
+          console.log(\`Page filtered (valid: \${validCount}/\${data.length}), auto loading next page...\`);          
+            
+            isLoading = false; // <--- 必须加这行！解锁状态！
+            
+            setTimeout(() => load(false), 100); 
+            return;
+        }
       } catch (e) { console.error(e); }
       isLoading = false;
       tip.style.opacity = '0';
