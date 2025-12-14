@@ -139,7 +139,7 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 					// 为了数据库 FileID 的准确性，我们采用“带页码标记”的单发模式
 					
 					// 限制一下多图数量，防止一个作品 200 张图刷屏
-					maxPages := 5 
+					maxPages := 100 
 					
 					for i, page := range pages.Body {
 						if i >= maxPages { break }
