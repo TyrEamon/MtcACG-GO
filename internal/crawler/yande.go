@@ -82,11 +82,30 @@ func StartYande(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 						continue
 					}
 
-					pid := fmt.Sprintf("yande_%d", post.ID)
-					// ✅ 核心去重：先查内存，再查 D1
-					if db.CheckExists(pid) {
-						continue
-					}
+                pid := fmt.Sprintf("yande_%d", post.ID)
+
+                // 1. 先按原始 ID 查 (防止单图逻辑变动)
+                if db.CheckExists(pid) {
+                       continue
+                    }
+
+// 2. ✨ 新增：如果是套图逻辑存进去的，可能叫 _p0，也得查一下
+// 如果 post.ParentID != 0，说明它是子图，我们应该查它的父图是否发过
+                targetCheckID := post.ID
+                if post.ParentID != 0 {
+                   targetCheckID = post.ParentID
+                    }
+// 构造 _p0 格式的 ID (例如 yande_1000_p0)
+                pidP0 := fmt.Sprintf("yande_%d_p0", targetCheckID)
+
+                if db.CheckExists(pidP0) {
+    // 把原始 ID 也补进内存，下次就不用查两次了
+                   db.History[pid] = true 
+					log.Printf("♻️ Skip Family Group (Parent: %d) - Already in DB", targetCheckID)
+                   continue
+                   }
+
+
 
 					targetID := post.ID
 					if post.ParentID != 0 {
