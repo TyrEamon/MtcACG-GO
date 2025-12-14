@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+	"github.com/nfnt/resize"
 )
 
 type BotHandler struct {
@@ -62,11 +63,13 @@ func (h *BotHandler) ProcessAndSend(ctx context.Context, imgData []byte, postID,
 
 	// 2. 检查图片大小，如果超过 9MB 则压缩 (Telegram 限制 10MB)
 	const MaxPhotoSize = 9 * 1024 * 1024 
+    shouldCompress := int64(len(imgData)) > MaxPhotoSize || (width > 4000 || height > 4000)
 	finalData := imgData
 
-	if int64(len(imgData)) > MaxPhotoSize {
-		log.Printf("⚠️ Image %s is too large (%.2f MB), compressing...", postID, float64(len(imgData))/1024/1024)
-		compressed, err := compressImage(imgData, MaxPhotoSize)
+    if shouldCompress {
+        // 提示信息改一下，说明原因
+        log.Printf("⚠️ Image %s needs processing (Size: %.2f MB, Dim: %dx%d)...", postID, float64(len(imgData))/1024/1024, width, height)
+	   compressed, err := compressImage(imgData, MaxPhotoSize)
 		if err != nil {
 			log.Printf("❌ Compression failed: %v. Trying original...", err)
 			// 压缩失败，还是试着用原图发一下（虽然大概率失败）
@@ -186,6 +189,22 @@ func compressImage(data []byte, targetSize int64) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode error: %v", err)
 	}
+
+    // 2. ✅ 新增：检查分辨率 (Telegram 限制宽+高 ≤ 10000，这里限制单边 4000 最稳)
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+	
+	if width > 4000 || height > 4000 {
+		log.Printf("📏 Resizing image from %dx%d (Too big for TG)", width, height)
+		// 保持比例缩放，最大边长设为 4000
+		if width > height {
+			img = resize.Resize(4000, 0, img, resize.Lanczos3)
+		} else {
+			img = resize.Resize(0, 4000, img, resize.Lanczos3)
+		}
+	}
+	
     log.Printf("📉 Compressing %s image...", format)
 
 	// 循环尝试压缩，降低质量
