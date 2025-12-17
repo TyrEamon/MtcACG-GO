@@ -81,6 +81,8 @@ if (path.startsWith('/image/')) {
 };
 
 // 默认参数 dlExt = null，保证了不传参数时行为和原来一致
+// 替换 proxyTelegramImage 函数
+
 async function proxyTelegramImage(fileId, botToken, dlExt = null) {
   try {
     const r1 = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`);
@@ -92,13 +94,11 @@ async function proxyTelegramImage(fileId, botToken, dlExt = null) {
     h.set("Cache-Control", "public, max-age=31536000, immutable");
     h.set("Access-Control-Allow-Origin", "*");
 
-    // === 新增部分开始 ===
-    // 只有在 URL 里传了 dl=jpg 时才会执行这里，否则直接跳过
+    // ✅ 只要有 dl 参数，就强制赋予后缀，文件名就是 FileID.jpg
     if (dlExt) {
         const filename = `${fileId}.${dlExt}`;
         h.set("Content-Disposition", `attachment; filename="${filename}"`);
     }
-    // === 新增部分结束 ===
 
     return new Response(r2.body, { headers: h });
   } catch (e) {
@@ -247,12 +247,15 @@ async function handleDetail(id, env) {
   const title = (img.caption || 'Untitled').split('\n')[0];
   const tags = (img.tags || '').trim().split(' ').filter(Boolean);
 
-  const imagesJson = JSON.stringify(items.map(x => ({ 
-    id: x.id, 
-    file: x.file_name,
-    // 强制指定下载后缀为 jpg
-    download: `/image/${x.file_name}?dl=jpg`
+// 在 handleDetail 函数中
+const imagesJson = JSON.stringify(items.map(x => ({
+  id: x.id,
+  file: x.file_name,
+  // ✅ 暴力写法：不管你是预览图还是原图，统统加上 ?dl=jpg
+  // 这样下载下来的文件名就是：文件ID.jpg
+  download: `/image/${x.origin_id || x.file_name}?dl=jpg`
 })));
+
 
   // 侧边栏 HTML (背景 bg-[#1a1a1a] 不透明，防止花屏
   const SIDEBAR_CONTENT = `
@@ -445,6 +448,15 @@ async function handleDetail(id, env) {
   </div>
 
   <script>
+  // --- ✅ 从这里开始插入 ---
+    async function randomImage() {
+      try {
+        const res = await fetch('/api/posts?q=random');
+        const data = await res.json();
+        if(data.length) window.location.href = '/detail/' + data[0].id;
+      } catch(e) {}
+    }
+    // --- 🏁 插入结束 ---
     function toggleSidebar() {
       const sb = document.getElementById('sidebar');
       const ov = document.getElementById('overlay');
@@ -666,6 +678,9 @@ function htmlHome() {
   <link rel="icon" type="image/png" href="https://pub-d07d03b8c35d40309ce9c6d8216e885b.r2.dev/ACGg.png">
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
+    /* 隐藏滚动条但保留功能 */
+    ::-webkit-scrollbar { width: 0px; background: transparent; }
+    html { -ms-overflow-style: none; scrollbar-width: none; }
     body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #121212; color: #fff; overflow-x: hidden; }
     #bg-layer { position: fixed; inset: 0; z-index: -1; background-size: cover; background-position: center; filter: blur(6px) brightness(0.6); opacity: 0; transition: opacity 1s; pointer-events: none; }
     .header { position: fixed; top: 0; left: 0; right: 0; z-index: 28; background: rgba(18, 18, 18, 0.90); backdrop-filter: none; -webkit-backdrop-filter: none; border-bottom: 1px solid rgba(255,255,255,0.1); padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; }
@@ -706,6 +721,20 @@ function htmlHome() {
   </div>
 
   <div id="masonry" class="masonry-wrap"></div>
+  <!-- ✅ 从这里开始插入 -->
+  <button id="auto-scroll-btn" onclick="toggleAutoScroll()" 
+      class="fixed bottom-8 right-8 z-50 w-12 h-12 rounded-full 
+             bg-white/10 hover:bg-white/20 backdrop-blur-md 
+             border border-white/10 shadow-xl 
+             text-gray-300 hover:text-white 
+             transition-all duration-300 transform hover:scale-105 active:scale-95 flex items-center justify-center group"
+      title="自动滚动">
+     <!-- 播放图标 -->
+     <svg id="icon-play" class="w-5 h-5 ml-0.5 group-hover:text-pink-400 transition-colors" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+     <!-- 暂停图标 -->
+     <svg id="icon-pause" class="w-5 h-5 hidden text-pink-500 animate-pulse" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+  </button>
+  <!-- 🏁 插入结束 -->
   <div id="tip" class="loading-tip">在加载啦…别、别急呀喵～</div>
 
   <script>
@@ -751,6 +780,75 @@ function htmlHome() {
       }
     });
 
+    // ===========================================
+    // --- 2. 智能自动滚动逻辑 (独立于 load 函数外) ---
+    // ===========================================
+    let autoScrollActive = false;
+    let scrollTimer = null;
+    let resumeTimer = null;
+
+    function getIcons() {
+      return {
+        btn: document.getElementById('auto-scroll-btn'),
+        play: document.getElementById('icon-play'),
+        pause: document.getElementById('icon-pause')
+      };
+    }
+
+    window.toggleAutoScroll = function() {
+      autoScrollActive = !autoScrollActive;
+      if (autoScrollActive) {
+        updateBtnState(true);
+        startScrolling();
+      } else {
+        updateBtnState(false);
+        stopScrolling();
+        if (resumeTimer) { clearTimeout(resumeTimer); resumeTimer = null; }
+      }
+    }
+
+    function updateBtnState(isActive) {
+      const { btn, play, pause } = getIcons();
+      if(!btn) return;
+      if(isActive) {
+        btn.classList.add('bg-white/20', 'border-pink-500/50', 'shadow-pink-500/20');
+        btn.classList.remove('border-white/10');
+        play.classList.add('hidden'); pause.classList.remove('hidden');
+      } else {
+        btn.classList.remove('bg-white/20', 'border-pink-500/50', 'shadow-pink-500/20');
+        btn.classList.add('border-white/10');
+        play.classList.remove('hidden'); pause.classList.add('hidden');
+      }
+    }
+
+    function startScrolling() {
+      if (!autoScrollActive) return;
+      if (scrollTimer) clearInterval(scrollTimer);
+      scrollTimer = setInterval(() => {
+        window.scrollBy(0, 0.8);
+        if(done && (window.innerHeight + window.scrollY) >= document.body.offsetHeight) {
+             window.toggleAutoScroll(); 
+        }
+      }, 16);
+    }
+
+    function stopScrolling() {
+      if (scrollTimer) { clearInterval(scrollTimer); scrollTimer = null; }
+    }
+
+    ['mousedown', 'wheel', 'touchstart', 'keydown'].forEach(event => {
+      window.addEventListener(event, () => {
+        if (autoScrollActive) {
+          stopScrolling();
+          if (resumeTimer) clearTimeout(resumeTimer);
+          resumeTimer = setTimeout(() => {
+            if (autoScrollActive) startScrolling();
+          }, 1500);
+        }
+      }, { passive: true });
+    });
+    
+
     async function load(reset = false) {
       if (isLoading || (done && !reset)) return;
       isLoading = true;
@@ -776,8 +874,7 @@ function htmlHome() {
           isLoading = false;
           return;
         }
-
-
+  
         let colHeights = new Array(colCount).fill(0);
         
         // 首页屏蔽列表
@@ -792,7 +889,7 @@ function htmlHome() {
           'Garter','Lingerie','Panty','Stockings','ふたなり','輪姦','母子','近親','異種姦','孕ませ','緊縛',
           '奴隷','悪堕ち','精神崩壊','セックス','中出し','顔射','イラマチオ','フェラ','パイズリ','手コキ','潮吹き','絶頂',
           'アヘ顔','全裸','乳首','ペニス','ヴァギナ','クリトリス','近親','触手','レイプ','調教','スカトロ','ふたなり','パンツ下ろし',
-          'TG-forward',
+          'TG-forward','yande',
         ];
 
         // 里世界展示列表（目前和屏蔽列表一致，你可以按需修改）
@@ -807,7 +904,7 @@ function htmlHome() {
           'パンツ下ろし','尻揉み','比基尼','裸足','School Swimsuit','アナル尻尾','Maid','Swimsuit','Ass','成人','成人','Pantyhose',
           'Garter','连裤袜','ロリ','Lingerie','Panty','Stockings','yande','ふたなり','輪姦','母子','近親','異種姦','孕ませ','緊縛',
           '奴隷','悪堕ち','精神崩壊','セックス','中出し','顔射','イラマチオ','フェラ','パイズリ','手コキ','潮吹き','絶頂',
-          'アヘ顔','全裸','乳首','ペニス','ヴァギナ','クリトリス','近親','触手','レイプ','調教','スカトロ','ふたなり','TG-forward'
+          'アヘ顔','全裸','乳首','ペニス','ヴァギナ','クリトリス','近親','触手','レイプ','調教','スカトロ','ふたなり','TG-forward','yande',
         ]; 
 
         // === 1. 新增智能检测函数（防误杀核心）===
