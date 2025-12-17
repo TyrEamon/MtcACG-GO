@@ -96,18 +96,34 @@ func (h *BotHandler) ProcessAndSend(ctx context.Context, imgData []byte, postID,
 	}
 	fileID := msg.Photo[len(msg.Photo)-1].FileID
 
-	// 4. 存入 D1 数据库
-	err = h.DB.SaveImage(postID, fileID, caption, tags, source, width, height)
+// 4. ✨ 新增：发送原文件 (SendDocument) - 点击下载时给这张
+	docParams := &bot.SendDocumentParams{
+		ChatID: h.Cfg.ChannelID,
+		Document: &models.InputFileUpload{
+			Filename: source + "_original.jpg", // 文件名
+			Data:     bytes.NewReader(imgData), // ⚠️ 必须用原始数据
+		},
+		ReplyParameters: &models.ReplyParameters{
+			MessageID: msg.ID, // 回复上一条消息，保持整洁
+		},
+		Caption: "⬇️ Original File",
+	}
+
+	var originFileID string
+	msgDoc, errDoc := h.API.SendDocument(ctx, docParams)
+	if errDoc != nil {
+		log.Printf("⚠️ SendDocument Failed (Will only save preview): %v", errDoc)
+		originFileID = "" // 失败了就留空，不影响预览
+	} else {
+		originFileID = msgDoc.Document.FileID
+	}
+
+	// 5. 存入 D1 数据库 (传入 previewID 和 originID)
+	err = h.DB.SaveImage(postID, fileID, originFileID, caption, tags, source, width, height)
 	if err != nil {
 		log.Printf("❌ D1 Save Failed: %v", err)
 	} else {
-		log.Printf("✅ Saved: %s (%dx%d)", postID, width, height)
-	}
-}
-
-func (h *BotHandler) PushHistoryToCloud() {
-	if h.DB != nil {
-		h.DB.PushHistory()
+		log.Printf("✅ Saved: %s (Preview + Origin)", postID)
 	}
 }
 
@@ -171,7 +187,9 @@ func (h *BotHandler) handleManual(ctx context.Context, b *bot.Bot, update *model
     width := photo.Width
     height := photo.Height
 
-    h.DB.SaveImage(postID, finalFileID, caption, "TG-forward", "TG-C", width, height)
+    // 中间增加了一个 "" 空字符串，作为 originID 的占位符
+    h.DB.SaveImage(postID, finalFileID, "", caption, "TG-forward", "TG-C", width, height)
+
 
     b.SendMessage(ctx, &bot.SendMessageParams{
         ChatID: update.Message.Chat.ID,
