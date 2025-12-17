@@ -77,12 +77,16 @@
 2.  执行初始化 SQL 创建表结构：
     ```sql
     CREATE TABLE IF NOT EXISTS images (
-        id TEXT PRIMARY KEY,
-        file_name TEXT,
-        caption TEXT,
-        tags TEXT,
-        created_at INTEGER
-    );
+      id TEXT PRIMARY KEY,
+      file_name TEXT,
+      origin_id TEXT,
+      caption TEXT,
+      tags TEXT,
+      created_at INTEGER,
+      width INTEGER,
+      height INTEGER
+);
+
     ```
     *你可以在 Cloudflare Dashboard 的 D1 控制台中直接执行此 SQL。*
 
