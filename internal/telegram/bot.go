@@ -24,95 +24,87 @@ type BotHandler struct {
 	Cfg *config.Config
 	DB  *database.D1Client
 	// ✅ 新增：转发会话状态
-    Forwarding      bool             
-    ForwardTitle    string          
-    ForwardPreview  *models.Message  
-    ForwardOriginal *models.Message 
+	Forwarding      bool             
+	ForwardTitle    string          
+	ForwardPreview  *models.Message  
+	ForwardOriginal *models.Message 
 }
 
 func NewBot(cfg *config.Config, db *database.D1Client) (*BotHandler, error) {
-    h := &BotHandler{Cfg: cfg, DB: db}
+	h := &BotHandler{Cfg: cfg, DB: db}
 
-opts := []bot.Option{
-    bot.WithDefaultHandler(func(ctx context.Context, b *bot.Bot, update *models.Update) {
-        if update.Message == nil {
-            return
-        }
-        if h.Forwarding {
-            // 1. 如果是 Photo，优先当 Preview
-            if len(update.Message.Photo) > 0 && h.ForwardPreview == nil {
-                h.ForwardPreview = update.Message
-                log.Printf("🖼 收到预览(Photo): %d", update.Message.ID)
-                // 添加提示
-                b.SendMessage(ctx, &bot.SendMessageParams{
-                    ChatID: update.Message.Chat.ID,
-                    Text:   "✅ 已获取预览图，请发送原图文件。",
-                    ReplyParameters: &models.ReplyParameters{MessageID: update.Message.ID},
-                })
-                return
-            }
+	b, err := bot.New(cfg.BotToken)
+	if err != nil {
+		return nil, err
+	}
 
-            // 2. 如果是 Document
-            if update.Message.Document != nil {
-                // 如果 Preview 还是空，这个 Document 就是 Preview！
-                if h.ForwardPreview == nil {
-                    h.ForwardPreview = update.Message
-                    log.Printf("📄 收到预览(Document): %d", update.Message.ID)
-                    // 添加提示
-                    b.SendMessage(ctx, &bot.SendMessageParams{
-                        ChatID: update.Message.Chat.ID,
-                        Text:   "✅ 已获取预览图，请发送原图文件。",
-                        ReplyParameters: &models.ReplyParameters{MessageID: update.Message.ID},
-                    })
-                }
-                
-                // 如果 Original 是空（且不是同一个消息），它也是 Original
-                if h.ForwardOriginal == nil && h.ForwardPreview != update.Message {
-                    h.ForwardOriginal = update.Message
-                    log.Printf("📄 收到原图(Document): %d", update.Message.ID)
-                    // 添加提示
-                    b.SendMessage(ctx, &bot.SendMessageParams{
-                        ChatID: update.Message.Chat.ID,
-                        Text:   "✅ 已获取原图。",
-                        ReplyParameters: &models.ReplyParameters{MessageID: update.Message.ID},
-                    })
-                }
-            }
-        }
-    }),
-}
+	h.API = b
 
-    b, err := bot.New(cfg.BotToken, opts...)
-    if err != nil {
-        return nil, err
-    }
+	// ✅ /save
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/save", bot.MatchTypeExact, h.handleSave)
 
-    h.API = b
+	// ✅ 新增：/forward_start 和 /forward_end
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/forward_start", bot.MatchTypePrefix, h.handleForwardStart)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/forward_end",   bot.MatchTypeExact,  h.handleForwardEnd)
 
-    // ✅ /save
-    b.RegisterHandler(bot.HandlerTypeMessageText, "/save", bot.MatchTypeExact, h.handleSave)
+	// ✅ 保留原来的手动转存逻辑（老的转发方式）
+	//    但是在 forward 模式下不处理，避免和 /forward_start 流程冲突
+	b.RegisterHandler(bot.HandlerTypeMessageText, "", bot.MatchTypePrefix, func(ctx context.Context, b *bot.Bot, update *models.Update) {
+		if update.Message == nil {
+			return
+		}
 
-    // ✅ 新增：/forward_start 和 /forward_end
-    b.RegisterHandler(bot.HandlerTypeMessageText, "/forward_start", bot.MatchTypePrefix, h.handleForwardStart)
-    b.RegisterHandler(bot.HandlerTypeMessageText, "/forward_end",   bot.MatchTypeExact,  h.handleForwardEnd)
+		// ✅ 把 defaultHandler 的逻辑放在这里
+		if h.Forwarding {
+			// 1. 如果是 Photo，优先当 Preview
+			if len(update.Message.Photo) > 0 && h.ForwardPreview == nil {
+				h.ForwardPreview = update.Message
+				log.Printf("🖼 收到预览(Photo): %d", update.Message.ID)
+				// 添加提示
+				b.SendMessage(ctx, &bot.SendMessageParams{
+					ChatID: update.Message.Chat.ID,
+					Text:   "✅ 已获取预览图，请发送原图文件。",
+					ReplyParameters: &models.ReplyParameters{MessageID: update.Message.ID},
+				})
+				return
+			}
 
-    // ✅ 保留原来的手动转存逻辑（老的转发方式）
-    //    但是在 forward 模式下不处理，避免和 /forward_start 流程冲突
-    b.RegisterHandler(bot.HandlerTypeMessageText, "", bot.MatchTypePrefix, func(ctx context.Context, b *bot.Bot, update *models.Update) {
-        if update.Message == nil {
-            return
-        }
-        // 如果当前在 forward 模式，交给 default handler 收集，不用老逻辑
-        if h.Forwarding {
-            return
-        }
-        // 非 forward 模式，走原来的 handleManual
-        if len(update.Message.Photo) > 0 {
-            h.handleManual(ctx, b, update)
-        }
-    })
+			// 2. 如果是 Document
+			if update.Message.Document != nil {
+				// 如果 Preview 还是空，这个 Document 就是 Preview！
+				if h.ForwardPreview == nil {
+					h.ForwardPreview = update.Message
+					log.Printf("📄 收到预览(Document): %d", update.Message.ID)
+					// 添加提示
+					b.SendMessage(ctx, &bot.SendMessageParams{
+						ChatID: update.Message.Chat.ID,
+						Text:   "✅ 已获取预览图，请发送原图文件。",
+						ReplyParameters: &models.ReplyParameters{MessageID: update.Message.ID},
+					})
+				}
+				
+				// 如果 Original 是空（且不是同一个消息），它也是 Original
+				if h.ForwardOriginal == nil && h.ForwardPreview != update.Message {
+					h.ForwardOriginal = update.Message
+					log.Printf("📄 收到原图(Document): %d", update.Message.ID)
+					// 添加提示
+					b.SendMessage(ctx, &bot.SendMessageParams{
+						ChatID: update.Message.Chat.ID,
+						Text:   "✅ 已获取原图。",
+						ReplyParameters: &models.ReplyParameters{MessageID: update.Message.ID},
+					})
+				}
+			}
+			return
+		}
 
-    return h, nil
+		// 非 forward 模式，走原来的 handleManual
+		if len(update.Message.Photo) > 0 {
+			h.handleManual(ctx, b, update)
+		}
+	})
+
+	return h, nil
 }
 
 func (h *BotHandler) Start(ctx context.Context) {
