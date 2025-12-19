@@ -392,7 +392,7 @@ func (h *BotHandler) handleForwardEnd(ctx context.Context, b *bot.Bot, update *m
 		} else {
 			log.Printf("❌ Document 转发失败: %v", err)
 			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "❌ 文件转发失败。"})
-			h.IsForwarding = false
+			h.Forwarding = false      // ✅ 改成这个
 			return
 		}
 	}
