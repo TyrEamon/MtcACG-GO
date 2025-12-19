@@ -300,6 +300,10 @@ func (h *BotHandler) handleForwardStart(ctx context.Context, b *bot.Bot, update 
 
 // ✅ /forward_end：自动处理单文件或双图模式
 func (h *BotHandler) handleForwardEnd(ctx context.Context, b *bot.Bot, update *models.Update) {
+	// 如果你没有 mutex，可以把这两行删掉
+	// h.mu.Lock()
+	// defer h.mu.Unlock()
+
 	msg := update.Message
 	if msg == nil {
 		return
@@ -313,7 +317,7 @@ func (h *BotHandler) handleForwardEnd(ctx context.Context, b *bot.Bot, update *m
 		return
 	}
 
-	// 1. 检查有没有预览图 (ForwardPreview 不为空即可，Photo/Document 都行)
+	// 1. 检查有没有预览图
 	if h.ForwardPreview == nil {
 		b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: msg.Chat.ID,
@@ -325,11 +329,14 @@ func (h *BotHandler) handleForwardEnd(ctx context.Context, b *bot.Bot, update *m
 
 	// 2. 准备数据
 	postID := fmt.Sprintf("manual_%d", h.ForwardPreview.ID)
-	caption := h.ForwardTitle
-	if caption == "" {
+	
+	// 确定 caption
+	var caption string
+	if h.ForwardOriginal != nil && h.ForwardOriginal.Caption != "" {
+		caption = h.ForwardOriginal.Caption
+	} else if h.ForwardPreview.Caption != "" {
 		caption = h.ForwardPreview.Caption
-	}
-	if caption == "" {
+	} else {
 		caption = "MtcACG:TG"
 	}
 
@@ -354,67 +361,85 @@ func (h *BotHandler) handleForwardEnd(ctx context.Context, b *bot.Bot, update *m
 		width = srcPhoto.Width
 		height = srcPhoto.Height
 
-		// 只有在这种情况下，才检查是否有额外的原图文件
+		// 检查是否有额外的原图文件
 		if h.ForwardOriginal != nil && h.ForwardOriginal.Document != nil {
 			originFileID = h.ForwardOriginal.Document.FileID
 		}
 
 	} else if h.ForwardPreview.Document != nil {
 		// 情况 B: 用户只发了一个文件 (Document)
-		// 策略：自动下载 -> 转成 Photo 发送(作为预览) -> 原文件作为原图
-		log.Printf("📥 单文件模式触发，正在下载: %s", h.ForwardPreview.Document.FileName)
-		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "⏳ 正在处理单文件 (下载+生成预览)..."})
-
-		// 默认原图就是这个文件
-		originFileID = h.ForwardPreview.Document.FileID
-
-		// 下载文件流
-		fileData, err := h.downloadFile(ctx, originFileID)
-		if err == nil {
-			// 下载成功，尝试当做 Photo 发出去
-			fwdMsg, err := b.SendPhoto(ctx, &bot.SendPhotoParams{
-				ChatID:  h.Cfg.ChannelID,
-				Photo:   &models.InputFileUpload{Filename: "preview.jpg", Data: bytes.NewReader(fileData)},
-				Caption: caption,
-			})
-
-			if err == nil && len(fwdMsg.Photo) > 0 {
-				log.Printf("✅ 自动生成预览图成功")
-				previewFileID = fwdMsg.Photo[len(fwdMsg.Photo)-1].FileID
-				width = fwdMsg.Photo[len(fwdMsg.Photo)-1].Width
-				height = fwdMsg.Photo[len(fwdMsg.Photo)-1].Height
+		log.Printf("📥 单文件模式触发: %s", h.ForwardPreview.Document.FileName)
+		
+		// 1. 先把 Document 转发到频道作为预览 (如果它是图片，TG 会展示缩略图)
+		srcDoc := h.ForwardPreview.Document
+		fwdMsg, err := b.SendDocument(ctx, &bot.SendDocumentParams{
+			ChatID:   h.Cfg.ChannelID,
+			Document: &models.InputFileString{Data: srcDoc.FileID},
+			Caption:  caption,
+		})
+		
+		if err == nil && fwdMsg.Document != nil {
+			previewFileID = fwdMsg.Document.FileID
+			// 如果有缩略图尺寸
+			if fwdMsg.Document.Thumbnail != nil {
+				width = fwdMsg.Document.Thumbnail.Width
+				height = fwdMsg.Document.Thumbnail.Height
 			} else {
-				log.Printf("⚠️ 生成预览图失败 (可能非图片): %v", err)
-				previewFileID = originFileID // 降级：预览图ID = 原图ID
+				// 尝试用原图尺寸 (如果能获取到)
+				// 注意：Document 里面不一定有 Width/Height 字段，视情况而定
 			}
+			originFileID = fwdMsg.Document.FileID // 这种情况下，原图就是预览图
 		} else {
-			log.Printf("❌ 下载文件失败: %v", err)
-			previewFileID = originFileID // 降级
+			log.Printf("❌ Document 转发失败: %v", err)
+			b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: "❌ 文件转发失败。"})
+			h.IsForwarding = false
+			return
+		}
+	}
+
+	// 🔥 关键步骤：如果存在独立的 originFileID (情况A)，把它也转发到频道！
+	// 这样爬虫 Bot 才能下载它！
+	if originFileID != "" && originFileID != previewFileID {
+		docMsg, err := b.SendDocument(ctx, &bot.SendDocumentParams{
+			ChatID:   h.Cfg.ChannelID,
+			Document: &models.InputFileString{Data: originFileID},
+			// 不带 Caption 防止刷屏
+		})
+		if err == nil && docMsg.Document != nil {
+			// 更新 originFileID 为频道里的新 ID
+			originFileID = docMsg.Document.FileID
+			log.Printf("✅ 原图已补发到频道，新 ID: %s", originFileID)
+		} else {
+			log.Printf("⚠️ 原图补发失败: %v", err)
 		}
 	}
 
 	// 3. 存入 D1
+	// 注意：这里的 SaveImage 参数要和你的 d1.go 匹配
+	// 假设你的 d1.go 还是: SaveImage(postID, fileID, originID, caption, tags, width, height)
+	// 如果你之前删了 source 参数，这里记得也要去掉！
 	err := h.DB.SaveImage(postID, previewFileID, originFileID, caption, "TG-forward", "TG-C", width, height)
+	
 	if err != nil {
-		log.Printf("❌ D1 Save Failed (forward): %v", err)
+		log.Printf("❌ D1 Save Failed: %v", err)
 		b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: msg.Chat.ID,
-			Text:   "❌ 保存到数据库失败。",
+			Text:   "❌ 保存到数据库失败 (D1 Error)。",
 		})
 	} else {
 		b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID:          msg.Chat.ID,
-			Text:            "✅ 发布成功！(已自动关联预览图与原图)",
+			Text:            fmt.Sprintf("✅ 发布成功！\nPost ID: %s", postID),
 			ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
 		})
 	}
 
 	// 4. 重置会话
 	h.Forwarding = false
-	h.ForwardTitle = ""
 	h.ForwardPreview = nil
 	h.ForwardOriginal = nil
 }
+
 
 
 // compressImage 尝试把图片压缩到指定大小以下
