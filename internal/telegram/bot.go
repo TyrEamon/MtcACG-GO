@@ -65,9 +65,17 @@ func NewBot(cfg *config.Config, db *database.D1Client) (*BotHandler, error) {
     b.RegisterHandler(bot.HandlerTypeMessageText, "/forward_end",   bot.MatchTypeExact,  h.handleForwardEnd)
 
     // ✅ 保留原来的手动转存逻辑（老的转发方式）
-    b.RegisterHandler(bot.HandlerTypeMessageText, "", bot.MatchTypePrefix, h.handleManual)
+    //    但是在 forward 模式下不处理，避免和 /forward_start 流程冲突
     b.RegisterHandler(bot.HandlerTypeMessageText, "", bot.MatchTypePrefix, func(ctx context.Context, b *bot.Bot, update *models.Update) {
-        if update.Message != nil && len(update.Message.Photo) > 0 {
+        if update.Message == nil {
+            return
+        }
+        // 如果当前在 forward 模式，交给 default handler 收集，不用老逻辑
+        if h.Forwarding {
+            return
+        }
+        // 非 forward 模式，走原来的 handleManual
+        if len(update.Message.Photo) > 0 {
             h.handleManual(ctx, b, update)
         }
     })
