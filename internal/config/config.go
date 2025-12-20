@@ -17,6 +17,7 @@ type KemonoCreator struct {
 type Config struct {
 	BotToken       string
 	ChannelID      int64
+	TwitterCookie string
 	CF_AccountID   string
 	CF_APIToken    string
 	D1_DatabaseID  string
