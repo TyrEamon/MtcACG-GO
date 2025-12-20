@@ -480,7 +480,7 @@ func compressImage(data []byte, targetSize int64) ([]byte, error) {
     log.Printf("📉 Compressing %s image...", format)
 
 	// 循环尝试压缩，降低质量
-	quality := 99 // 初始质量
+	quality := 100 // 初始质量
 	for {
 		buf := new(bytes.Buffer)
 		err = jpeg.Encode(buf, img, &jpeg.Options{Quality: quality})
@@ -492,12 +492,12 @@ func compressImage(data []byte, targetSize int64) ([]byte, error) {
 		size := int64(len(compressedData))
 
 		// 如果达标了，或者是质量太低了就不压了
-		if size <= targetSize || quality <= 40 {
+		if size <= targetSize || quality <= 50 {
 			log.Printf("✅ Compressed to %.2f MB (Quality: %d)", float64(size)/1024/1024, quality)
 			return compressedData, nil
 		}
 
 		// 否则降低质量继续
-		quality -= 5
+		quality -= 1
 	}
 }
