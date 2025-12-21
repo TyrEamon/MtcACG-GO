@@ -158,17 +158,39 @@ func (h *BotHandler) ProcessAndSend(ctx context.Context, imgData []byte, postID,
 	}
 	fileID := msg.Photo[len(msg.Photo)-1].FileID
 
+	
+	// 定义原图数据变量，默认为原始数据
+	docData := imgData
+	// 设置 19MB 阈值 (Telegram getFile 限制是 20MB，留 1MB 安全空间)
+	const MaxDownloadSize = 19 * 1024 * 1024 
+
+	// 如果原图超过 19MB，进行无损/微损压缩
+	if int64(len(docData)) > MaxDownloadSize {
+		log.Printf("[%s] Original size %.2f MB > 19MB. Compressing document for Worker compatibility...", postID, float64(len(docData))/1024/1024)
+		
+		// 复用你现有的 compressImage 函数，目标设定为 19MB
+		compressedDoc, err := compressImage(imgData, MaxDownloadSize)
+		if err != nil {
+			log.Printf("[%s] Doc compression failed: %v. Sending original.", postID, err)
+		} else {
+			docData = compressedDoc
+			log.Printf("[%s] Document compressed to %.2f MB.", postID, float64(len(docData))/1024/1024)
+		}
+	}
+
+	// 构造发送文件的参数
 	docParams := &bot.SendDocumentParams{
-		ChatID: h.Cfg.ChannelID,
-		Document: &models.InputFileUpload{
+		ChatID:    h.Cfg.ChannelID,
+		Document:  &models.InputFileUpload{
 			Filename: source + "_original.jpg",
-			Data:     bytes.NewReader(imgData),
+			Data:     bytes.NewReader(docData), // <--- 注意这里变成了 docData
 		},
 		ReplyParameters: &models.ReplyParameters{
 			MessageID: msg.ID,
 		},
-		Caption: "⬇️ Original File",
+		Caption: "Original File",
 	}
+
 
 	var originFileID string
 	msgDoc, errDoc := h.API.SendDocument(ctx, docParams)
