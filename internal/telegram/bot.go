@@ -17,6 +17,7 @@ import (
 	"my-bot-go/internal/config"
 	"my-bot-go/internal/database"
 	"my-bot-go/internal/pixiv"
+	"my-bot-go/internal/manyacg"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -49,6 +50,9 @@ func NewBot(cfg *config.Config, db *database.D1Client) (*BotHandler, error) {
 
 	// ✅ Pixiv Link
 	b.RegisterHandler(bot.HandlerTypeMessageText, "pixiv.net/artworks/", bot.MatchTypeContains, h.handlePixivLink)
+
+	// ✅ 新增：监听 ManyACG 链接
+    b.RegisterHandler(bot.HandlerTypeMessageText, "manyacg.top/artwork/", bot.MatchTypeContains, h.handleManyacgLink)
 
 	// ✅ /forward_start & /forward_end
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/forward_start", bot.MatchTypePrefix, h.handleForwardStart)
@@ -512,3 +516,88 @@ func (h *BotHandler) handlePixivLink(ctx context.Context, b *bot.Bot, update *mo
 		})
 	}
 }
+
+func (h *BotHandler) handleManyacgLink(ctx context.Context, b *bot.Bot, update *models.Update) {
+	// ✅ 关键修改：如果当前正在转发模式，忽略链接，防止冲突
+	if h.Forwarding {
+		return
+	}
+
+	text := update.Message.Text
+
+	// 1. 提取 ManyACG 链接
+	re := regexp.MustCompile(`manyacg\.top/artwork/[a-zA-Z0-9]+`)
+	matches := re.FindStringSubmatch(text)
+	if len(matches) < 1 {
+		return
+	}
+	artworkURL := matches[0]
+
+	// 提示用户正在处理
+	loadingMsg, _ := b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: update.Message.Chat.ID,
+		Text:   "⏳ 正在抓取 ManyACG 链接...",
+		ReplyParameters: &models.ReplyParameters{MessageID: update.Message.ID},
+	})
+
+	// 2. 调用 manyacg 包获取信息
+	artwork, err := manyacg.GetArtworkInfo(artworkURL)
+	if err != nil {
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: update.Message.Chat.ID,
+			Text:   "❌ 获取失败: " + err.Error(),
+		})
+		return
+	}
+
+	// 3. 循环发送每一张图
+	successCount := 0
+	skippedCount := 0
+
+	for i, pic := range artwork.Pictures {
+		// 下载原图
+		imgData, err := manyacg.DownloadOriginal(ctx, pic.ID)
+		if err != nil {
+			fmt.Printf("❌ ManyACG Download Failed: %v\n", err)
+			continue
+		}
+
+		// 构造唯一的 PID: manyacg_123456_p0
+		pid := fmt.Sprintf("manyacg_%s_p%d", artwork.ID, i)
+
+		// 构造标题
+		caption := fmt.Sprintf("ManyACG: %s [P%d/%d]\nArtist: %s\nTags: %s",
+			artwork.Title, i+1, len(artwork.Pictures),
+			artwork.Artist,
+			manyacg.FormatTags(artwork.Tags))
+
+		// 检查数据库去重
+		if h.DB.CheckExists(pid) {
+			skippedCount++
+			continue
+		}
+
+		// 发送
+		h.ProcessAndSend(ctx, imgData, pid, manyacg.FormatTags(artwork.Tags), caption, "manyacg", pic.Width, pic.Height)
+		successCount++
+
+		// 稍微歇一下
+		time.Sleep(1 * time.Second)
+	}
+
+	// 4. 反馈结果
+	finalText := fmt.Sprintf("✅ 处理完成！\n成功发送: %d 张\n跳过重复: %d 张", successCount, skippedCount)
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: update.Message.Chat.ID,
+		Text:   finalText,
+	})
+
+	// 删掉那个“正在抓取”的提示（可选）
+	if loadingMsg != nil {
+		b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+			ChatID:    update.Message.Chat.ID,
+			MessageID: loadingMsg.ID,
+		})
+	}
+}
+
