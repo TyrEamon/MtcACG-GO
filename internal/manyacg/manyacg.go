@@ -1,7 +1,6 @@
 package manyacg
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
