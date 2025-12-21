@@ -77,13 +77,19 @@ func GetTweetWithCookie(url string, cookie string) (*Tweet, error) {
 	// 这是一个通用的 Guest Token (长期有效)
 	req.Header.Set("Authorization", "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA")
 	
-	// 自动提取 csrf token
-	if strings.Contains(cleanCookie, "ct0=") {
-		parts := strings.Split(cleanCookie, "ct0=")
-		if len(parts) > 1 {
-			ct0 := strings.Split(parts[1], ";")[0]
-			req.Header.Set("x-csrf-token", ct0)
+// 💡 健壮的 ct0 提取逻辑
+	var ct0 string
+	cookies := strings.Split(cleanCookie, ";")
+	for _, c := range cookies {
+		c = strings.TrimSpace(c)
+		if strings.HasPrefix(c, "ct0=") {
+			ct0 = strings.TrimPrefix(c, "ct0=")
+			break
 		}
+	}
+	
+	if ct0 != "" {
+		req.Header.Set("x-csrf-token", ct0)
 	}
 
 	client := &http.Client{}
