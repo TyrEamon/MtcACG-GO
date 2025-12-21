@@ -17,8 +17,6 @@ type KemonoCreator struct {
 type Config struct {
 	BotToken       string
 	ChannelID      int64
-	TwitterCookie string
-	TwitterCt0    string // ✅ 新增这一行
 	CF_AccountID   string
 	CF_APIToken    string
 	D1_DatabaseID  string
@@ -51,10 +49,6 @@ func Load() *Config {
 	if err != nil {
 		log.Printf("⚠️ Warning: Invalid CHANNEL_ID: %v", err)
 	}
-
-	// ✅ 新增：读取 Twitter 配置
-    twitterCookie := getEnv("TWITTER_COOKIE", "")
-    twitterCt0 := getEnv("TWITTER_CT0", "")
 
 	pixivLimit, _ := strconv.Atoi(getEnv("PIXIV_LIMIT", "3"))
 	yandeLimit, _ := strconv.Atoi(getEnv("YANDE_LIMIT", "1"))
@@ -103,9 +97,6 @@ func Load() *Config {
 		PixivArtistIDs: artistIDs,
 		CosineTags:        cosineTags,
 		CosineLimitPerTag: cosineLimit,
-		// ✅ 这里把读取到的变量填进去
-        TwitterCookie: twitterCookie, 
-        TwitterCt0:    twitterCt0,
 	}
 
 	// 解析 Kemono 多平台配置
