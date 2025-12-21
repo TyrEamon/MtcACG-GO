@@ -101,7 +101,7 @@ func NewBot(cfg *config.Config, db *database.D1Client) (*BotHandler, error) {
 		if strings.Contains(update.Message.Text, "twitter.com") || strings.Contains(update.Message.Text, "x.com") {
         // 调用 Twitter 爬虫
         // 调用 Twitter 爬
-		   tweet, err := twitter.GetTweetWithCookie(update.Message.Text, h.Cfg.TwitterCookie)
+		   tweet, err := twitter.GetTweetWithCookie(update.Message.Text, h.Cfg.TwitterCookie, h.Cfg.TwitterCt0)
         if err != nil {
             b.SendMessage(ctx, &bot.SendMessageParams{
                 ChatID: update.Message.Chat.ID,
