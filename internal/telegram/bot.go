@@ -562,11 +562,11 @@ func (h *BotHandler) handleManyacgLink(ctx context.Context, b *bot.Bot, update *
 			continue
 		}
 
-		// 构造唯一的 PID: manyacg_123456_p0
-		pid := fmt.Sprintf("manyacg_%s_p%d", artwork.ID, i)
+		// 构造唯一的 PID: mtcacg_123456_p0
+		pid := fmt.Sprintf("mtcacg_%s_p%d", artwork.ID, i)
 
 		// 构造标题
-		caption := fmt.Sprintf("ManyACG: %s [P%d/%d]\nArtist: %s\nTags: %s",
+		caption := fmt.Sprintf("MtcACG: %s [P%d/%d]\nArtist: %s\nTags: %s",
 			artwork.Title, i+1, len(artwork.Pictures),
 			artwork.Artist,
 			manyacg.FormatTags(artwork.Tags))
