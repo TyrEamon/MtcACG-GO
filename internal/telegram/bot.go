@@ -584,8 +584,11 @@ func (h *BotHandler) handlePixivLink(ctx context.Context, b *bot.Bot, update *mo
 		Text:   finalText,
 	})
 
-	// 删掉那个“正在抓取”的提示（可选）
+// ✅ 删掉“正在抓取”的提示，保持整洁
 	if loadingMsg != nil {
-		// b.DeleteMessage(ctx, &bot.DeleteMessageParams{ChatID: update.Message.Chat.ID, MessageID: loadingMsg.ID})
+		b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+			ChatID:    update.Message.Chat.ID,
+			MessageID: loadingMsg.ID,
+		})
 	}
 }
