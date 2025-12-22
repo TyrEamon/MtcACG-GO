@@ -130,6 +130,29 @@ func StartManyACGAll(ctx context.Context, cfg *config.Config, db *database.D1Cli
 						continue
 					}
 
+					// 1. 截断 tags（避免 caption 太长）
+                 tags := aw.Tags
+                    maxTags := 20
+                    if len(tags) > maxTags {
+                    tags = tags[:maxTags]
+                    }
+
+						width := pic.Width
+					    height := pic.Height
+
+                         // 2. 压缩图片尺寸（避免 Telegram 尺寸超限）
+                        maxSize := 4000
+                        if width > maxSize || height > maxSize {
+							// 手动求最大边
+                            longest := width
+                            if height > longest {
+                               longest = height
+                            }
+                            scale := float64(maxSize) / float64(max(width, height))
+                            width = int(float64(width) * scale)
+                            height = int(float64(height) * scale)
+                            }
+
 					// 1) 唯一 PID: mtcacg_{artworkID}_p{index}
 					pid := fmt.Sprintf("mtcacg_%s_p%d", aw.ID, pic.Index)
 
@@ -146,15 +169,15 @@ func StartManyACGAll(ctx context.Context, cfg *config.Config, db *database.D1Cli
 						continue
 					}
 
-					width := pic.Width
-					height := pic.Height
+					log.Printf("⬇️ ManyACG [%s] P%d (%dx%d, pid=%s)", aw.Title, pic.Index, width, height, pid)
 
 					// 4) 组装标签 / caption
-					tagsStr := strings.Join(aw.Tags, " ")
-					hashTags := ""
-					if len(aw.Tags) > 0 {
-						hashTags = "#" + strings.Join(aw.Tags, " #")
-					}
+                    tagsStr := strings.Join(tags, " ")
+                    hashTags := ""
+                    if len(tags) > 0 {
+                        hashTags = "#" + strings.Join(tags, " #")
+                    }
+
 
 					source := "mtcacg"
 					if aw.SourceType != "" {
@@ -171,7 +194,6 @@ func StartManyACGAll(ctx context.Context, cfg *config.Config, db *database.D1Cli
 						hashTags,
 					)
 
-					log.Printf("⬇️ ManyACG [%s] P%d (%dx%d, pid=%s)", aw.Title, pic.Index, width, height, pid)
 
 					// 5) 发送并存库
 					botHandler.ProcessAndSend(ctx, imgData, pid, tagsStr, caption, source, width, height)
