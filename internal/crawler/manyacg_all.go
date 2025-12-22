@@ -148,7 +148,7 @@ func StartManyACGAll(ctx context.Context, cfg *config.Config, db *database.D1Cli
                             if height > longest {
                                longest = height
                             }
-                            scale := float64(maxSize) / float64(max(width, height))
+                            scale := float64(maxSize) / float64(longest)
                             width = int(float64(width) * scale)
                             height = int(float64(height) * scale)
                             }
