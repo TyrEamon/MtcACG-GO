@@ -99,6 +99,23 @@ func StartManyACG(ctx context.Context, cfg *config.Config, db *database.D1Client
                         width := pic.Width
                         height := pic.Height
 
+                        // 1. 截断 tags（避免 caption 太长）
+                        maxTags := 20
+                        if len(aw.Tags) > maxTags {
+                            tags := aw.Tags[:maxTags]
+                        } else {
+                            tags := aw.Tags
+                        }
+
+                         // 2. 压缩图片尺寸（避免 Telegram 尺寸超限）
+                        maxSize := 4000
+                        if width > maxSize || height > maxSize {
+                            scale := float64(maxSize) / float64(max(width, height))
+                            width = int(float64(width) * scale)
+                            height = int(float64(height) * scale)
+                            }
+
+
                         log.Printf("⬇️ MtcACG random [%s] P%d (%dx%d, pid=%s)", item.Title, pic.Index, width, height, pid)
 
                         // 构造文案
