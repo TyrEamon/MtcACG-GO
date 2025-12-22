@@ -79,7 +79,7 @@ func StartManyACGAll(ctx context.Context, cfg *config.Config, db *database.D1Cli
           if page > maxPagePerRound {
               log.Printf("🔚 MtcACG one round done (1-%d), sleep 30m...", maxPagePerRound)
               page = 1
-              time.Sleep(30 * time.Minute)
+              time.Sleep(120 * time.Minute)
               continue
           }
                // == 新增限制逻辑结束 ==
