@@ -59,8 +59,10 @@ func StartManyACGAll(ctx context.Context, cfg *config.Config, db *database.D1Cli
 	client.SetTimeout(60 * time.Second)
 	client.SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 
-	// 起始页，可以以后做成配置
-	page := 1
+     // 起始页
+    page := 1
+    // 每轮只扫前 10 页（根据你自己的需求调整）
+    maxPagePerRound := 10
 
 	// r18 参数：0=非R18，1=R18，2=全部
 	r18Param := "2"
@@ -76,6 +78,14 @@ func StartManyACGAll(ctx context.Context, cfg *config.Config, db *database.D1Cli
 			return
 
 		default:
+			     // == 新增限制逻辑开始 ==
+          if page > maxPagePerRound {
+              log.Printf("🔚 MtcACG one round done (1-%d), sleep 30m...", maxPagePerRound)
+              page = 1
+              time.Sleep(30 * time.Minute)
+              continue
+          }
+               // == 新增限制逻辑结束 ==
 			log.Printf("📜 MtcACG list page=%d, r18=%s ...", page, r18Param)
 
 			apiURL := "https://api.manyacg.top/v1/artwork/list"
