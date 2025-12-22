@@ -66,9 +66,6 @@ func StartManyACGAll(ctx context.Context, cfg *config.Config, db *database.D1Cli
 
 	// r18 参数：0=非R18，1=R18，2=全部
 	r18Param := "2"
-	if cfg.ManyACGR18Mode != "" {
-		r18Param = cfg.ManyACGR18Mode
-	}
 
 	log.Println("🚀 Starting MtcACG All Crawler...")
 
@@ -159,13 +156,13 @@ func StartManyACGAll(ctx context.Context, cfg *config.Config, db *database.D1Cli
 						hashTags = "#" + strings.Join(aw.Tags, " #")
 					}
 
-					source := "manyacg"
+					source := "mtcacg"
 					if aw.SourceType != "" {
 						source = aw.SourceType
 					}
 
 					caption := fmt.Sprintf(
-						"ManyACG: %s [P%d/%d]\nArtist: %s\nSource: %s\nPlatform: %s\nTags: %s",
+						"MtcACG: %s [P%d/%d]\nArtist: %s\nSource: %s\nPlatform: %s\nTags: %s",
 						strings.TrimSpace(aw.Title),
 						pic.Index+1, len(aw.Pictures),
 						strings.TrimSpace(aw.Artist.Name),
