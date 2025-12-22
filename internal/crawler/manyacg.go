@@ -101,11 +101,14 @@ func StartManyACG(ctx context.Context, cfg *config.Config, db *database.D1Client
 
                         // 1. 截断 tags（避免 caption 太长）
                         maxTags := 20
-                        if len(aw.Tags) > maxTags {
-                            tags := aw.Tags[:maxTags]
-                        } else {
-                            tags := aw.Tags
+                        tags := item.Tags
+                        if item.R18 {
+                            tags = append(tags, "R-18")
                         }
+                        if len(tags) > maxTags {
+                            tags = tags[:maxTags]
+                        }
+
 
                          // 2. 压缩图片尺寸（避免 Telegram 尺寸超限）
                         maxSize := 4000
@@ -122,11 +125,6 @@ func StartManyACG(ctx context.Context, cfg *config.Config, db *database.D1Client
 
                         log.Printf("⬇️ MtcACG random [%s] P%d (%dx%d, pid=%s)", item.Title, pic.Index, width, height, pid)
 
-                        // 构造文案
-                        tags := item.Tags
-                        if item.R18 {
-                            tags = append(tags, "R-18")
-                        }
                         tagsStr := strings.Join(tags, " ")
                         hashTags := ""
                         if len(tags) > 0 {
