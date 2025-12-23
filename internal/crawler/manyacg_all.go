@@ -53,7 +53,7 @@ type ManyACGListResp struct {
 	Data    []ManyACGArtwork `json:"data"`
 }
 
-// StartManyACGAll 通过 /v1/artwork/list 按页爬 ManyACG 全站
+// StartManyACGAll
 func StartManyACGAll(ctx context.Context, cfg *config.Config, db *database.D1Client, botHandler *telegram.BotHandler) {
 	client := resty.New()
 	client.SetTimeout(60 * time.Second)
@@ -75,14 +75,14 @@ func StartManyACGAll(ctx context.Context, cfg *config.Config, db *database.D1Cli
 			return
 
 		default:
-			     // == 新增限制逻辑开始 ==
+			    
           if page > maxPagePerRound {
               log.Printf("🔚 MtcACG one round done (1-%d), sleep 30m...", maxPagePerRound)
               page = 1
               time.Sleep(120 * time.Minute)
               continue
           }
-               // == 新增限制逻辑结束 ==
+               
 			log.Printf("📜 MtcACG list page=%d, r18=%s ...", page, r18Param)
 
 			apiURL := "https://api.manyacg.top/v1/artwork/list"
@@ -143,7 +143,7 @@ func StartManyACGAll(ctx context.Context, cfg *config.Config, db *database.D1Cli
                          // 2. 压缩图片尺寸（避免 Telegram 尺寸超限）
                         maxSize := 4000
                         if width > maxSize || height > maxSize {
-							// 手动求最大边
+							//求最大边
                             longest := width
                             if height > longest {
                                longest = height
@@ -200,7 +200,7 @@ func StartManyACGAll(ctx context.Context, cfg *config.Config, db *database.D1Cli
 					db.History[pid] = true
 					db.PushHistory()
 
-					time.Sleep(3 * time.Second)
+					time.Sleep(15 * time.Second)
 				}
 			}
 
