@@ -141,17 +141,17 @@ func StartYande(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 					db.PushHistory()
 					
 					// 处理完一张/组图后稍微休息一下，避免刷屏
-					time.Sleep(3 * time.Second)
+					time.Sleep(15 * time.Second)
 				}
 
-				// ✅ 一组标签任务跑完后，休息 10 秒再跑下一组标签
+				// ✅ 一组标签任务跑完后，休息 20 秒再跑下一组标签
 				log.Printf("✅ Task [%s] finished. Cooldown 10s...", currentTags)
-				time.Sleep(10 * time.Second)
+				time.Sleep(20 * time.Second)
 			}
 
 			// ✅ 所有标签组都轮询了一遍，开始长睡眠
 			log.Println("😴 All Yande Tasks Done. Sleeping 80m...") 
-			time.Sleep(80 * time.Minute)
+			time.Sleep(61 * time.Minute)
 		}
 	}
 }
