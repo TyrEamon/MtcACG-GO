@@ -144,7 +144,7 @@ func StartManyACG(ctx context.Context, cfg *config.Config, db *database.D1Client
                         db.History[pid] = true
                         db.PushHistory()
 
-                        time.Sleep(15 * time.Second)
+                        time.Sleep(8 * time.Second)
                     }
                 }
 
