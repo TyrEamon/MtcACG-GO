@@ -124,7 +124,7 @@ func StartCosineTag(ctx context.Context, cfg *config.Config, db *database.D1Clie
                            db.CheckExists(dbKey+".jpg") || 
                            db.CheckExists(dbKey+".png") || 
                            db.CheckExists(dbKey+".webp") {
-                            // log.Printf("♻️ Skip %s (Already in DB)", dbKey)
+                             log.Printf("♻️ cosine-Skip %s (Already in DB)", dbKey)
                             continue
                         }
 
@@ -154,7 +154,7 @@ func StartCosineTag(ctx context.Context, cfg *config.Config, db *database.D1Clie
 						imgResp, err := client.R().SetHeaders(dlHeaders).Get(downloadURL)
 						success := (err == nil && imgResp.StatusCode() == 200)
 
-						// 2. 🚨 备用方案 (偷家战术)
+						// 2. 🚨 备用方案
 						if !success {
 							log.Printf("⚠️ Primary Source Failed, trying Cosine Backup...")
 							
@@ -210,21 +210,21 @@ func StartCosineTag(ctx context.Context, cfg *config.Config, db *database.D1Clie
 						botHandler.ProcessAndSend(ctx, imgData, sendID, strings.Join(img.Tags, " "), caption, "pixiv", img.Width, img.Height)
                         
                         // 存库 (存标准 Key，无后缀)
-                        // 注意：这里显式调用 PushHistory，防止 ProcessAndSend 没存对
+                        // 注意：显式调用 PushHistory，防止 ProcessAndSend 没存对
                         db.History[dbKey] = true
                         db.PushHistory()
                         
                         processedCount++
-                        time.Sleep(4 * time.Second)
+                        time.Sleep(18 * time.Second)
 					}
 					
 					start += limit
-					time.Sleep(2 * time.Second)
+					time.Sleep(3 * time.Second)
 				}
 			}
 
-			log.Println("😴 Cosine Crawler Cycle Done. Sleeping 2 hours...")
-			time.Sleep(2 * time.Hour)
+			log.Println("😴 Cosine Crawler Cycle Done. Sleeping 127 Mins...")
+			time.Sleep(127 * time.Minute)
 		}
 	}
 }
