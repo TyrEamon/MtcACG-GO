@@ -144,18 +144,18 @@ func StartManyACG(ctx context.Context, cfg *config.Config, db *database.D1Client
                         db.History[pid] = true
                         db.PushHistory()
 
-                        time.Sleep(2 * time.Second)
+                        time.Sleep(15 * time.Second)
                     }
                 }
 
 
 				
 				     // 每次 API 请求间隔 1 秒
-			            time.Sleep(1 * time.Second)
+			            time.Sleep(3 * time.Second)
 			    }
 
-			log.Println("😴 ManyACG Batch Done. Sleeping 30m...")
-			time.Sleep(30 * time.Minute)
+			log.Println("😴 ManyACG Batch Done. Sleeping 37m...")
+			time.Sleep(37 * time.Minute)
 		}
 	}
 }
