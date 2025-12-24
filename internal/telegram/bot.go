@@ -89,7 +89,7 @@ func NewBot(cfg *config.Config, db *database.D1Client) (*BotHandler, error) {
 				log.Printf("🖼 [Forward] 收到 P%d 预览图", h.ForwardIndex)
 				b.SendMessage(ctx, &bot.SendMessageParams{
 					ChatID:          msg.Chat.ID,
-					Text:            fmt.Sprintf("✅ 已获取 P%d 预览图，请发送原图文件(Document)。", h.ForwardIndex),
+					Text:            fmt.Sprintf("✅ 获取到 P%d 预览图了，主人请发送原图文件(Document)吧，喵~", h.ForwardIndex),
 					ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
 				})
 				return
@@ -412,7 +412,7 @@ func (h *BotHandler) handleForwardContinue(ctx context.Context, b *bot.Bot, upda
 	b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,
 		Text:   fmt.Sprintf("✅ **P%d 已发布** (ID: `%s_p%d`)\n⬇️ 正在等待 **P%d** ...", prevIndex, h.ForwardBaseID, prevIndex, h.ForwardIndex),
-		ParseMode: models.ParseModeMarkdown,
+		//ParseMode: models.ParseModeMarkdown,
 	})
 }
 
