@@ -19,6 +19,7 @@ import (
 	"my-bot-go/internal/pixiv"
 	"my-bot-go/internal/manyacg"
 	"my-bot-go/internal/yande"
+	"my-bot-go/internal/fanbox"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -58,6 +59,9 @@ func NewBot(cfg *config.Config, db *database.D1Client) (*BotHandler, error) {
 	// ✅ 新增：监听 Yande 链接
     // 匹配如 https://yande.re/post/show/1179601
     b.RegisterHandler(bot.HandlerTypeMessageText, "yande.re/post/show/", bot.MatchTypeContains, h.handleYandeLink)
+
+	// 在 NewBot() 注册
+    b.RegisterHandler(bot.HandlerTypeMessageText, "fanbox.cc/posts/", bot.MatchTypeContains, h.handleFanboxLink)
 
 	// ✅ /forward_start & /forward_end
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/forward_start", bot.MatchTypePrefix, h.handleForwardStart)
@@ -692,6 +696,81 @@ func (h *BotHandler) handleYandeLink(ctx context.Context, b *bot.Bot, update *mo
         ChatID: update.Message.Chat.ID,
         Text:   "✅ 处理完成！",
         ReplyParameters: &models.ReplyParameters{MessageID: update.Message.ID},
+    })
+}
+
+// 新增处理函数
+func (h *BotHandler) handleFanboxLink(ctx context.Context, b *bot.Bot, update *models.Update) {
+    if h.Forwarding {
+        return
+    }
+
+    text := update.Message.Text
+    re := regexp.MustCompile(`fanbox\.cc/posts/(\d+)`)
+    matches := re.FindStringSubmatch(text)
+    if len(matches) < 2 {
+        return
+    }
+
+    postID := matches[1]
+    pid := fmt.Sprintf("fanbox_%s", postID)
+
+    // ✅ 先查重
+    if h.DB.CheckExists(pid) {
+        b.SendMessage(ctx, &bot.SendMessageParams{
+            ChatID:             update.Message.Chat.ID,
+            Text:               "⏭️ Fanbox 这张已经发过了，跳过。",
+            ReplyParameters:    &models.ReplyParameters{MessageID: update.Message.ID},
+        })
+        return
+    }
+
+    loadingMsg, _ := b.SendMessage(ctx, &bot.SendMessageParams{
+        ChatID:             update.Message.Chat.ID,
+        Text:               "⏳ 正在抓取 Fanbox ID: " + postID + " ...",
+        ReplyParameters:    &models.ReplyParameters{MessageID: update.Message.ID},
+    })
+
+    // 获取详情
+    post, err := fanbox.GetFanboxPost(postID, h.Cfg.FanboxCookie)
+    if err != nil {
+        b.SendMessage(ctx, &bot.SendMessageParams{
+            ChatID: update.Message.Chat.ID,
+            Text:   "❌ Fanbox 获取失败: " + err.Error(),
+        })
+        return
+    }
+
+    // 处理多图
+    successCount := 0
+    for i, img := range post.Images {
+        imgData, err := fanbox.DownloadFanboxImage(img.URL, h.Cfg.FanboxCookie)
+        if err != nil {
+            continue
+        }
+
+        caption := fmt.Sprintf("Fanbox: %s [P%d/%d]\nAuthor: %s\nTags: #%s",
+            post.Title, i+1, len(post.Images),
+            post.Author,
+            strings.Join(post.Tags, " #"))
+
+        h.ProcessAndSend(ctx, imgData, fmt.Sprintf("%s_p%d", pid, i), 
+            strings.Join(post.Tags, " "), caption, "fanbox", img.Width, img.Height)
+        successCount++
+        time.Sleep(1 * time.Second)
+    }
+
+    // 6. 完成反馈
+    if loadingMsg != nil {
+        b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+            ChatID:    update.Message.Chat.ID,
+            MessageID: loadingMsg.ID,
+        })
+    }
+	
+    b.SendMessage(ctx, &bot.SendMessageParams{
+        ChatID: update.Message.Chat.ID,
+        Text:   fmt.Sprintf("✅ Fanbox 处理完成！发送 %d 张", successCount),
     })
 }
 
