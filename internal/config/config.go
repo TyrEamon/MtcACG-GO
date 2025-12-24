@@ -26,6 +26,7 @@ type Config struct {
 	YandeLimit     int
 	YandeTags      string
 	PixivArtistIDs []string
+	FanboxCookie  string
 
 	// Kemono 支持
 	KemonoCreators []KemonoCreator
@@ -91,6 +92,7 @@ func Load() *Config {
 		D1_DatabaseID:  getEnv("D1_DATABASE_ID", ""),
 		WorkerURL:      getEnv("WORKER_URL", ""),
 		PixivPHPSESSID: getEnv("PIXIV_PHPSESSID", ""),
+		FanboxCookie:  getEnv("FANBOX_COOKIE", ""), // ✅ 新增这一行
 		PixivLimit:     pixivLimit,
 		YandeLimit:     yandeLimit,
 		YandeTags:      getEnv("YANDE_TAGS", "order:random"),
