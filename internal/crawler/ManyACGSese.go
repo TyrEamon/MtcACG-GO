@@ -19,7 +19,6 @@ import (
 	"github.com/go-resty/resty/v2"
 )
 
-// StartManyACGSese 专门爬取 /sese 接口
 // 策略：每 10 分钟爬 10 张
 func StartManyACGSese(ctx context.Context, cfg *config.Config, db *database.D1Client, botHandler *telegram.BotHandler) {
 	client := resty.New()
@@ -33,9 +32,8 @@ func StartManyACGSese(ctx context.Context, cfg *config.Config, db *database.D1Cl
 		default:
 			log.Println("🎲 Starting Batch Sese (10 Pics)...")
 
-			// ✅ 内部循环：一次爬 10 张
+			//  内部循环：一次爬 10 张
 			for i := 0; i < 10; i++ {
-				// 1. 请求跳转接口
 				url := "https://manyacg.top/sese"
 
 				resp, err := client.R().Get(url)
@@ -53,9 +51,8 @@ func StartManyACGSese(ctx context.Context, cfg *config.Config, db *database.D1Cl
 
 				// 2. 从最终跳转 URL 里提取 picture id
 				finalURL := resp.RawResponse.Request.URL.String()
-				// 例子: https://cdn.manyacg.top/regular/twitter/.../67009d8d4e0a5f427e928347_regular.webp
 				parts := strings.Split(finalURL, "/")
-				fileName := parts[len(parts)-1] // 67009d8d4e0a5f427e928347_regular.webp
+				fileName := parts[len(parts)-1] 
 
 				// 去掉结尾的 "_regular..."，只保留中间那段 id
 				idPart := fileName
@@ -63,7 +60,6 @@ func StartManyACGSese(ctx context.Context, cfg *config.Config, db *database.D1Cl
 					idPart = idPart[:idx]
 				}
 
-				// 3. 使用原图接口下载真正原图
 				originURL := fmt.Sprintf("https://api.manyacg.top/v1/picture/file/%s", idPart)
 				originResp, err := client.R().Get(originURL)
 				if err != nil || originResp.StatusCode() != 200 {
@@ -71,7 +67,6 @@ func StartManyACGSese(ctx context.Context, cfg *config.Config, db *database.D1Cl
 					continue
 				}
 
-				// 4. 拿到原图数据
 				imgData := originResp.Body()
 				if len(imgData) == 0 {
 					continue
@@ -80,7 +75,7 @@ func StartManyACGSese(ctx context.Context, cfg *config.Config, db *database.D1Cl
 				// 5. 解析宽高
 				imgConfig, format, err := image.DecodeConfig(bytes.NewReader(imgData))
 				if err != nil {
-					// log.Printf("⚠️ Sese Decode Failed: %v", err)
+					 log.Printf("⚠️ Sese Decode Failed: %v", err)
 					continue
 				}
 				width := imgConfig.Width
@@ -112,7 +107,7 @@ func StartManyACGSese(ctx context.Context, cfg *config.Config, db *database.D1Cl
 			}
 
 
-			// ✅ 批次结束后，休息 10 分钟
+			//  批次结束后，休息 10 分钟
 			log.Println("😴 Sese Batch Done. Sleeping 30m...")
 			time.Sleep(30 * time.Minute)
 		}
