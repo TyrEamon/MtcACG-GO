@@ -72,7 +72,7 @@ func GetArtworkInfo(artworkURL string) (*ArtworkInfo, error) {
 		return nil, fmt.Errorf("decode error: %v", err)
 	}
 
-	// ManyACG 成功状态码通常是 200 或 5（根据你之前的描述）
+	// ManyACG 成功状态码通常是 200 或 500
 	if result.Data.ID == "" {
 		return nil, fmt.Errorf("API returned error or empty data: %s", result.Message)
 	}
