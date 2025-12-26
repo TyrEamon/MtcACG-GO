@@ -31,13 +31,12 @@ type ArtworkInfo struct {
 		Height   int    `json:"height"`
 		Index    int    `json:"index"`
 		FileName string `json:"file_name"`
-		Regular  string `json:"regular"` // 预览图链接
+		Regular  string `json:"regular"` 
 	} `json:"pictures"`
 }
 
-// GetArtworkInfo 通过 ManyACG artwork 链接获取作品信息
+//ManyACG artwork 链接获取作品信息
 func GetArtworkInfo(artworkURL string) (*ArtworkInfo, error) {
-	// 1. 提取 artwork id
 	re := regexp.MustCompile(`artwork/([a-zA-Z0-9]+)`)
 	matches := re.FindStringSubmatch(artworkURL)
 	if len(matches) < 2 {
@@ -45,8 +44,7 @@ func GetArtworkInfo(artworkURL string) (*ArtworkInfo, error) {
 	}
 	artworkID := matches[1]
 
-	// 2. 请求 API
-	// 注意：根据经验，详情 API 返回的 data 通常是单个对象
+	//请求 API
 	url := fmt.Sprintf("https://api.manyacg.top/v1/artwork/%s", artworkID)
 	resp, err := http.Get(url)
 	if err != nil {
@@ -75,7 +73,6 @@ func GetArtworkInfo(artworkURL string) (*ArtworkInfo, error) {
 	}
 
 	// ManyACG 成功状态码通常是 200 或 5（根据你之前的描述）
-	// 这里宽松一点，只要 Data 有 ID 就算成功
 	if result.Data.ID == "" {
 		return nil, fmt.Errorf("API returned error or empty data: %s", result.Message)
 	}
@@ -83,9 +80,8 @@ func GetArtworkInfo(artworkURL string) (*ArtworkInfo, error) {
 	return &result.Data, nil
 }
 
-// DownloadOriginal 下载原图
+//下载原图
 func DownloadOriginal(ctx context.Context, pictureID string) ([]byte, error) {
-	// 这个接口是固定的，用于获取原图文件流
 	url := fmt.Sprintf("https://api.manyacg.top/v1/picture/file/%s", pictureID)
 	
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -112,12 +108,10 @@ func FormatTags(tags []string) string {
 	seen := make(map[string]bool)
 	var sb strings.Builder
 	for _, tag := range tags {
-		// 简单的清理
 		tag = strings.TrimSpace(tag)
 		if tag == "" {
 			continue
 		}
-		// 替换空格为下划线，避免标签断裂（可选）
 		tag = strings.ReplaceAll(tag, " ", "_")
 		
 		if !seen[tag] {
