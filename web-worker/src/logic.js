@@ -1,4 +1,4 @@
-import { SIDEBAR_HTML } from './templates.js';
+import { SIDEBAR_HTML, htmlDetail } from './templates.js';
 
 // === 1. API 处理函数 (搜索/随机) ===
 export async function handleApiPosts(url, env) {
@@ -36,56 +36,6 @@ export async function handleApiPosts(url, env) {
   } catch (e) {
     return new Response(JSON.stringify([]), {status: 500});
   }
-}
-
-  const BG_BLOCK_KEYWORDS = [
-  'R-18','NSFW','Hentai','血腥','R18','性爱','性交','淫','乱伦','裸胸',
-  '露点','调教','捆绑','触手','高潮','喷水','阿黑颜','颜射','后宫','痴汉',
-  'NTR','3P','Boobs','Tits','Nipples','Breast','强暴','做爱','自慰','援交',
-  'Creampie','Cum','Bukkake','Sex','Fuck','Blowjob','口交','Handjob','Paizuri',
-  '乳交','Cunnilingus','Fellatio','Masturbation','Pussy','Vagina','Penis','Dick',
-  'Cock','Genitals','Pubic','阴部','阴茎','私处','白虎','爆乳','Nude','Topless',
-  'Ahegao','高潮脸','X-ray','断面图','Mind Break','恶堕','坏掉','透视','Futa',
-  '扶她','双性','Tentacle','BDSM','Bondage','束缚','Scat','Pregnant','妊娠',
-  '怀孕','异种','丸吞','破れタイツ','敗北','快楽堕ち','寝取られ','乳出し','Garter',
-  'Lingerie','Panty','Stockings','ふたなり','輪姦','母子','近親','異種姦','孕ませ',
-  '緊縛','奴隷','悪堕ち','精神崩壊','セックス','中出し','顔射','イラマチオ','フェラ',
-  'パイズリ','手コキ','潮吹き','絶頂','アヘ顔','全裸','乳首','ペニス','ヴァギナ',
-  'クリトリス','触手','レイプ','調教','スカトロ','パンツ下ろし','naked','nipples','anus'
-];
-
-// safe = false -> 过滤 R18；safe = true -> 不过滤
-export async function handleBgRandom(includeR18, url, env) {
-  let sql = "SELECT * FROM images";
-  let params = [];
-
-  if (!includeR18) {
-    const conditions = BG_BLOCK_KEYWORDS
-      .map(() => "(tags NOT LIKE ? AND caption NOT LIKE ?)")
-      .join(" AND ");
-    sql += ` WHERE ${conditions}`;
-    BG_BLOCK_KEYWORDS.forEach(k => {
-      params.push(`%${k}%`);
-      params.push(`%${k}%`);
-    });
-  }
-
-  sql += " ORDER BY RANDOM() LIMIT 1";
-
-  const { results } = await env.DB.prepare(sql).bind(...params).all();
-  if (!results || results.length === 0) {
-    return new Response("Not found", { status: 404 });
-  }
-
-  // 如果带 type=image，则直接 302 跳转到图片，方便做背景
-  if (url.searchParams.get('type') === 'image') {
-    return Response.redirect(url.origin + `/image/${results[0].file_name}`, 302);
-  }
-
-  // 默认返回 JSON
-  return new Response(JSON.stringify(results), {
-    headers: { 'Content-Type': 'application/json' }
-  });
 }
 
 // === 2. 图片代理函数 ===
@@ -155,4 +105,50 @@ export async function handleDetail(id, env) {
    return new Response(html, {
      headers: { "Content-Type": "text/html;charset=UTF-8",'Cache-Control': 'public, max-age=60' }
    });
+}
+
+const BG_BLOCK_KEYWORDS = ['R-18','R18','NSFW','Hentai', 
+  '性爱','性交','乱伦','裸胸','露点','调教',
+  '触手','高潮','喷水','阿黑颜','颜射','后宫','痴汉',
+  'NTR','3P','Creampie','Bukkake','Paizuri',
+  '乳交', 'Cunnilingus','Fellatio','Masturbation',
+  'Ahegao','X-ray','Mind Break','恶堕', 
+  'Futa','Tentacle','BDSM','Bondage','Scat','Pregnant','naked','nipples','anus'];
+
+// includeR18 = true  -> 不过滤（里世界）
+// includeR18 = false -> 过滤 R18（安全）
+export async function handleBgRandom(includeR18, url, env) {
+  let sql = "SELECT * FROM images";
+  let params = [];
+
+  if (!includeR18) {
+    const conditions = BG_BLOCK_KEYWORDS
+      .map(() => "(tags NOT LIKE ? AND caption NOT LIKE ?)")
+      .join(" AND ");
+    sql += ` WHERE ${conditions}`;
+    BG_BLOCK_KEYWORDS.forEach(k => {
+      params.push(`%${k}%`);
+      params.push(`%${k}%`);
+    });
+  }
+
+  sql += " ORDER BY RANDOM() LIMIT 1";
+
+  const { results } = await env.DB.prepare(sql).bind(...params).all();
+  if (!results || results.length === 0) {
+     return new Response("Not found", { status: 404 });
+  }
+ 
+  const fileId = results[0].file_name;
+
+  // 导航站用：直接输出图片（Content-Type=image/*）
+  if (url.searchParams.get('type') === 'image') {
+    // 复用现有 Telegram 代理逻辑，强制 dlExt = 'jpg'
+    return await proxyTelegramImage(fileId, env.BOT_TOKEN, 'jpg');
+  }
+
+  // 默认返回 JSON
+  return new Response(JSON.stringify(results), {
+    headers: { 'Content-Type': 'application/json' }
+  });
 }

@@ -1,5 +1,5 @@
 import { htmlHome, htmlAbout } from './templates.js';
-import { proxyTelegramImage, handleDetail, handleApiPosts } from './logic.js';
+import { proxyTelegramImage, handleDetail, handleApiPosts, handleBgRandom } from './logic.js';
 
 export default {
   async fetch(request, env, ctx) {
@@ -36,20 +36,20 @@ export default {
       return await handleApiPosts(url, env);
     }
 
+    if (path === '/api/bg_all') {
+      return await handleBgRandom(true, url, env);
+    }
+
+    if (path === '/api/bg_safe') {
+      return await handleBgRandom(false, url, env);
+    }
+
+
     // 4. 详情页路由
     const detailMatch = path.match(/^\/detail\/(.+)$/);
     if (detailMatch) {
       return await handleDetail(detailMatch[1], env);
     }
-
-    if (path === '/api/bg_safe') {
-      return await handleBgRandom(false, url, env); // 不要 R18
-    }
-
-    if (path === '/api/bg_all') {
-      return await handleBgRandom(true, url, env);  // 包含 R18
-    }
-
 
     // 5. 静态页面
     if (path === '/about') {

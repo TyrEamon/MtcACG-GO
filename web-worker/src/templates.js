@@ -518,6 +518,16 @@ export function htmlHome() {
            <br>
            <code class="text-sm bg-black/30 px-3 py-2 rounded-lg mt-3 block w-full md:w-auto font-mono text-pink-300 border border-white/5 select-all">/api/posts?q=random</code>
            <br>
+           
+           -- 无R18 API接口 --
+           <br>
+           <code class="text-sm bg-black/30 px-3 py-2 rounded-lg mt-3 block w-full md:w-auto font-mono text-pink-300 border border-white/5 select-all">/api/bg_safe?type=image</code>
+           <br>
+           
+          -- 含R18 API接口 --
+          <br>
+           <code class="text-sm bg-black/30 px-3 py-2 rounded-lg mt-3 block w-full md:w-auto font-mono text-pink-300 border border-white/5 select-all">/api/bg_all?type=image</code>
+           <br>
            这是一个随机召唤阵，每次点击，都会召唤出一张此时此刻的惊喜。
          </p>
        </section>
