@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// 数据结构定义 (跟 crawler 里的一样，但独立出来)
+// 数据结构定义
 type PixivPage struct {
 	Urls struct {
 		Original string `json:"original"`
@@ -37,7 +37,6 @@ type PixivDetailResp struct {
 	} `json:"body"`
 }
 
-// 统一的结构体，返回给 Bot 使用
 type Illust struct {
 	ID       string
 	Title    string
@@ -50,7 +49,6 @@ type Illust struct {
 func GetIllust(id string, cookie string) (*Illust, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
 
-	// 1. 获取详情 (标题、Tags)
 	reqDetail, _ := http.NewRequest("GET", fmt.Sprintf("https://www.pixiv.net/ajax/illust/%s", id), nil)
 	reqDetail.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 	reqDetail.Header.Set("Cookie", "PHPSESSID="+cookie)
@@ -66,7 +64,6 @@ func GetIllust(id string, cookie string) (*Illust, error) {
 		return nil, err
 	}
 
-	// 2. 获取图片列表 (Pages)
 	reqPages, _ := http.NewRequest("GET", fmt.Sprintf("https://www.pixiv.net/ajax/illust/%s/pages?lang=zh", id), nil)
 	reqPages.Header.Set("User-Agent", "Mozilla/5.0")
 	reqPages.Header.Set("Cookie", "PHPSESSID="+cookie)
