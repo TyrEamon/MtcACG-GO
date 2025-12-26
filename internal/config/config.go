@@ -10,8 +10,8 @@ import (
 )
 
 type KemonoCreator struct {
-	Service string   // fanbox / patreon / gumroad ...
-	UserIDs []string // 该平台下要巡逻的作者 ID
+	Service string   
+	UserIDs []string 
 }
 
 type Config struct {
@@ -28,21 +28,19 @@ type Config struct {
 	PixivArtistIDs []string
 	FanboxCookie  string
 
-	// Kemono 支持
 	KemonoCreators []KemonoCreator
 
-	// Danbooru 支持
+    
 	DanbooruTags  string
 	DanbooruLimit int
 	DanbooruUsername string 
 	DanbooruAPIKey   string 
 
-	CosineTags        []string // 要爬取的标签列表，例如 "原神,崩坏星穹铁道"
-	CosineLimitPerTag int      // 每个标签限制爬取的数量
+	CosineTags        []string 
+	CosineLimitPerTag int      
 }
 
 func Load() *Config {
-	// 本地开发时尝试加载 .env；生产环境直接用环境变量
 	_ = godotenv.Load()
 
 	channelIDStr := getEnv("CHANNEL_ID", "")
@@ -67,13 +65,12 @@ func Load() *Config {
 		}
 	}
 
-	// 👇 【新增】读取 Cosine 配置
-	cosineLimit, _ := strconv.Atoi(getEnv("COSINE_LIMIT_PER_TAG", "30")) // 默认 50 张
+	// 读取 Cosine 站点配置
+	cosineLimit, _ := strconv.Atoi(getEnv("COSINE_LIMIT_PER_TAG", "30")) // 默认 30 张
 	
-	cosineTagsStr := getEnv("COSINE_TAGS", "初音未来") // 默认只爬"原神"
+	cosineTagsStr := getEnv("COSINE_TAGS", "初音未来") // 默认只爬"初音未来"
 	var cosineTags []string
 	if cosineTagsStr != "" {
-		// 支持逗号或换行分隔
 		parts := strings.FieldsFunc(cosineTagsStr, func(r rune) bool {
 			return r == ',' || r == '\n'
 		})
@@ -92,7 +89,7 @@ func Load() *Config {
 		D1_DatabaseID:  getEnv("D1_DATABASE_ID", ""),
 		WorkerURL:      getEnv("WORKER_URL", ""),
 		PixivPHPSESSID: getEnv("PIXIV_PHPSESSID", ""),
-		FanboxCookie:  getEnv("FANBOX_COOKIE", ""), // ✅ 新增这一行
+		FanboxCookie:  getEnv("FANBOX_COOKIE", ""), 
 		PixivLimit:     pixivLimit,
 		YandeLimit:     yandeLimit,
 		YandeTags:      getEnv("YANDE_TAGS", "order:random"),
@@ -101,8 +98,8 @@ func Load() *Config {
 		CosineLimitPerTag: cosineLimit,
 	}
 
-	// 解析 Kemono 多平台配置
-	// 例子：
+	// 解析 Kemono 多平台配置，#未完善
+	// 例：
 	// KEMONO_SERVICES=fanbox,patreon
 	// KEMONO_FANBOX_USER_IDS=123,456
 	// KEMONO_PATREON_USER_IDS=111,222
@@ -137,8 +134,8 @@ func Load() *Config {
 		}
 	}
 
-	// 解析 Danbooru 配置
-	// 例子：
+	// 解析 Danbooru 配置。#未完善
+	// 例：
 	// DANBOORU_TAGS=order:rank date:today -animated
 	// DANBOORU_LIMIT=5
 	danLimit, _ := strconv.Atoi(getEnv("DANBOORU_LIMIT", "3"))
@@ -154,7 +151,6 @@ func getEnv(key, fallback string) string {
 	if value, exists := os.LookupEnv(key); exists {
 		return value
 	}
-	// 兼容带空格的 key 或旧命名
 	if value, exists := os.LookupEnv(strings.ReplaceAll(key, "_", " ")); exists {
 		return value
 	}
