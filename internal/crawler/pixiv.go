@@ -35,7 +35,7 @@ type PixivDetailResp struct {
 		IllustId   string `json:"illustId"`
 		IllustTitle string `json:"illustTitle"`
 		UserName   string `json:"userName"`
-		IllustType int    `json:"illustType"` // 2=动图
+		IllustType int    `json:"illustType"` 
 		Tags       struct {
 			Tags []struct {
 				Tag string `json:"tag"`
@@ -74,7 +74,6 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 				}
 				json.Unmarshal(resp.Body(), &profile)
 
-				// 提取 ID 并倒序排列 (最新的在前)
 				var ids []int
 				for k := range profile.Body.Illusts {
 					if id, err := strconv.Atoi(k); err == nil {
@@ -83,14 +82,13 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 				}
 				sort.Sort(sort.Reverse(sort.IntSlice(ids)))
 
-				// 限制处理数量
 				count := 0
 				for _, id := range ids {
 					if count >= cfg.PixivLimit {
 						break
 					}
 					
-					// 基础去重 (只要发过第一张，就算这个ID处理过了)
+					// 基础去重 
 					mainPid := fmt.Sprintf("pixiv_%d_p0", id)
 					if db.CheckExists(mainPid) {
 						continue
@@ -98,7 +96,7 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 
 					log.Printf("🔍 Processing Pixiv ID: %d", id)
 
-					// 2. 获取详情 (主要为了拿标题、Tags、动图判断)
+					// 2. 获取详情
 					detailResp, err := client.R().Get(fmt.Sprintf("https://www.pixiv.net/ajax/illust/%d", id))
 					if err != nil { continue }
 
@@ -107,10 +105,9 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 						continue
 					}
 					
-					// 如果是动图 (IllustType == 2)，暂时跳过
+					// 如果是动图，暂时跳过
 					if detail.Body.IllustType == 2 {
 						log.Printf("⚠️ Skip Ugoira (GIF): %d", id)
-						// 标记为已处理，防止反复检查
 						db.History[mainPid] = true
 						continue 
 					}
@@ -122,7 +119,7 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 					}
 					tagsStr := strings.Join(tagStrs, " ")
 					
-					// 3. ✨ 关键升级：获取 Pages (多图+宽高)
+					// 关键升级：获取 Pages
 					pagesResp, err := client.R().Get(fmt.Sprintf("https://www.pixiv.net/ajax/illust/%d/pages?lang=zh", id))
 					if err != nil { continue }
 
@@ -133,20 +130,15 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 						continue
 					}
 
-					// 4. 开始处理每一张图 (支持多图发送)
-					// 这里简化逻辑：循环发每一张图，或者改成 MediaGroup
-					// 为了数据库 FileID 的准确性，采用“带页码标记”的单发模式
-					
-					// 限制一下多图数量，防止一个作品 200 张图刷屏
-					maxPages := 100 
+					maxPages := 50 
 					
 					for i, page := range pages.Body {
 						if i >= maxPages { break }
 
-						// 构造唯一的 PID: pixiv_12345_p0, pixiv_12345_p1
+						// 构造唯一的PID
 						subPid := fmt.Sprintf("pixiv_%d_p%d", id, i)
 						
-						// 双重检查：防止中断后重启重复发后面几张
+						// 双重检查
 						if db.CheckExists(subPid) {
 							continue
 						}
@@ -165,10 +157,9 @@ func StartPixiv(ctx context.Context, cfg *config.Config, db *database.D1Client, 
 							detail.Body.UserName, 
 							strings.ReplaceAll(tagsStr, " ", " #"))
 
-						// ProcessAndSend 内部会用 subPid 作为 ID 存入 D1
 						botHandler.ProcessAndSend(ctx, imgResp.Body(), subPid, tagsStr, caption, "pixiv", page.Width, page.Height)
 						
-						time.Sleep(18 * time.Second) // 慢一点，防止被 ban
+						time.Sleep(18 * time.Second) // 防被ban
 					}
 					
 					db.PushHistory()
