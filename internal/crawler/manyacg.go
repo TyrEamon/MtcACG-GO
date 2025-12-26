@@ -18,7 +18,7 @@ import (
 // ManyACGResponse 对应 https://manyacg.top/api/v1/artwork/random 的返回结构
 type ManyACGResponse struct {
 	Data []struct {
-		ID       string `json:"id"` // JSON返回的是字符串ID
+		ID       string `json:"id"` 
 		Title    string `json:"title"`
 		Artist   struct {
 			Name string `json:"name"`
@@ -48,7 +48,7 @@ func StartManyACG(ctx context.Context, cfg *config.Config, db *database.D1Client
 		default:
 			log.Println("🎲 Starting Batch ManyACG (10 Pics)...")
 
-			// ✅ 批量抽 10 次
+			//  批量抽 10 次
 			for i := 0; i < 10; i++ {
 				url := "https://manyacg.top/api/v1/artwork/random"
 
@@ -88,7 +88,6 @@ func StartManyACG(ctx context.Context, cfg *config.Config, db *database.D1Client
                             continue
                         }
 
-                        // 4) 用 manyacg.DownloadOriginal 下载原图
                         imgData, err := manyacg.DownloadOriginal(ctx, pic.ID)
                         if err != nil || len(imgData) == 0 {
                             log.Printf("❌ MtcACGR original failed: %v (picID=%s)", err, pic.ID)
@@ -139,7 +138,6 @@ func StartManyACG(ctx context.Context, cfg *config.Config, db *database.D1Client
                             hashTags,
                         )
 
-                        // 5) 发送并记录
                         botHandler.ProcessAndSend(ctx, imgData, pid, tagsStr, caption, "mtcacg", width, height)
                         db.History[pid] = true
                         db.PushHistory()
@@ -149,8 +147,6 @@ func StartManyACG(ctx context.Context, cfg *config.Config, db *database.D1Client
                 }
 
 
-				
-				     // 每次 API 请求间隔 1 秒
 			            time.Sleep(3 * time.Second)
 			    }
 
