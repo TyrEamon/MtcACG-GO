@@ -23,6 +23,7 @@ type Config struct {
 	WorkerURL      string
 	PixivPHPSESSID string
 	PixivLimit     int
+	PixivCrawlRange   int 
 	YandeLimit     int
 	YandeTags      string
 	PixivArtistIDs []string
@@ -50,6 +51,7 @@ func Load() *Config {
 	}
 
 	pixivLimit, _ := strconv.Atoi(getEnv("PIXIV_LIMIT", "3"))
+    pixivRange, _ := strconv.Atoi(getEnv("PIXIV_CRAWL_RANGE", "0"))   // <--- pixiv读取配置，默认0（代表不限制，根据需求可以设默认50）
 	yandeLimit, _ := strconv.Atoi(getEnv("YANDE_LIMIT", "1"))
 
 	artistIDsStr := getEnv("PIXIV_ARTIST_IDS", "")
@@ -91,6 +93,7 @@ func Load() *Config {
 		PixivPHPSESSID: getEnv("PIXIV_PHPSESSID", ""),
 		FanboxCookie:  getEnv("FANBOX_COOKIE", ""), 
 		PixivLimit:     pixivLimit,
+		PixivCrawlRange:   pixivRange,
 		YandeLimit:     yandeLimit,
 		YandeTags:      getEnv("YANDE_TAGS", "order:random"),
 		PixivArtistIDs: artistIDs,
