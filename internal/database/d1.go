@@ -148,3 +148,37 @@ func (d *D1Client) CheckExists(postID string) bool {
 	return false
 }
 
+// DeleteImage 从数据库中删除指定 ID 的图片记录
+func (d *D1Client) DeleteImage(postID string) error {
+    url := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/d1/database/%s/query",
+        d.cfg.CF_AccountID, d.cfg.D1_DatabaseID)
+
+    // 构造 DELETE SQL
+    sql := "DELETE FROM images WHERE id = ?"
+    params := []interface{}{postID}
+
+    body := map[string]interface{}{
+        "sql":    sql,
+        "params": params,
+    }
+
+    resp, err := d.client.R().
+        SetHeader("Authorization", "Bearer "+d.cfg.CF_APIToken).
+        SetHeader("Content-Type", "application/json").
+        SetBody(body).
+        Post(url)
+
+    if err != nil {
+        return err
+    }
+
+    if resp.IsError() {
+        return fmt.Errorf("D1 API Error: %s", resp.String())
+    }
+	
+    delete(d.History, postID)
+    
+    // d.PushHistory()     // 可选：立即同步一次历史记录
+
+    return nil
+}
