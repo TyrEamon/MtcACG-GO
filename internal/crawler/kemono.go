@@ -182,7 +182,7 @@ func fetchKemonoPost(
 			kResp.Post.Title, kResp.Post.Service, kResp.Post.User, kResp.Post.ID)
 		tagsStr := strings.Join(kResp.Post.Tags, " ")
 
-		botHandler.ProcessAndSend(ctx, data, subPID, tagsStr, caption, "kemono", width, height)
+		botHandler.ProcessAndSend(ctx, data, subPID, tagsStr, caption, kResp.Post.User, "kemono", width, height)
 		
 		// ✅ 【关键修改】每张子图发完，立刻推送到 D1
 		// 这样如果图片很多，下载到一半挂了，下次也不会重复发前几张
