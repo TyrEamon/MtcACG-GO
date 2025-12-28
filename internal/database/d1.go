@@ -78,14 +78,14 @@ func (d *D1Client) PushHistory() {
 	}
 }
 
-func (d *D1Client) SaveImage(postID, fileID, originID, caption, tags, source string, width, height int) error {
+func (d *D1Client) SaveImage(postID, fileID, originID, caption, artist, tags, source string, width, height int) error {
 	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/d1/database/%s/query",
 		d.cfg.CF_AccountID, d.cfg.D1_DatabaseID)
 	
 	finalTags := fmt.Sprintf("%s %s", tags, source)
 	
-	sql := "INSERT OR IGNORE INTO images (id, file_name, origin_id, caption, tags, created_at, width, height) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-	params := []interface{}{postID, fileID, originID, caption, finalTags, time.Now().Unix(), width, height}
+	sql := "INSERT OR IGNORE INTO images (id, file_name, origin_id, caption, artist, tags, created_at, width, height) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+	params := []interface{}{postID, fileID, originID, caption, artist, finalTags, time.Now().Unix(), width, height}
 	
 	body := map[string]interface{}{
 		"sql":    sql,
