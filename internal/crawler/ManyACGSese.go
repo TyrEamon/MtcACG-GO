@@ -99,7 +99,7 @@ func StartManyACGSese(ctx context.Context, cfg *config.Config, db *database.D1Cl
 				log.Printf("⬇️ Got Sese [%d/10]: %s (%dx%d)", i+1, fileName, width, height)
 
 				// 9. 发送并保存（用原图数据）
-				botHandler.ProcessAndSend(ctx, imgData, pid, tagsStr, caption, "manyacg_sese", width, height)
+				botHandler.ProcessAndSend(ctx, imgData, pid, tagsStr, caption, "Manyacg_sese", "manyacg_sese", width, height)
 				db.PushHistory()
 
 				// 每张图之间间隔 3 秒，防止 Telegram 发太快限流
