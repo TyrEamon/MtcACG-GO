@@ -196,7 +196,7 @@ func StartManyACGAll(ctx context.Context, cfg *config.Config, db *database.D1Cli
 
 
 					// 5) 发送并存库
-					botHandler.ProcessAndSend(ctx, imgData, pid, tagsStr, caption, source, width, height)
+					botHandler.ProcessAndSend(ctx, imgData, pid, tagsStr, caption, aw.Artist.Name, source, width, height)
 					db.History[pid] = true
 					db.PushHistory()
 
