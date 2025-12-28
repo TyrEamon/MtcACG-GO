@@ -36,6 +36,7 @@ type BotHandler struct {
 	ForwardBaseID   string
 	ForwardIndex    int
 	ForwardTitle    string
+	ForwardArtist   string
 	ForwardTags     string
 	CurrentPreview  *models.Message
 	CurrentOriginal *models.Message
@@ -294,19 +295,37 @@ func (h *BotHandler) handleForwardStart(ctx context.Context, b *bot.Bot, update 
 		userID := msg.From.ID
 		if userID != 8040798522 && userID != 6874581126 {
 			return
-		}
+		
+	// 新解析逻辑：标题 艺术家 #标签
+    rawText := ""
+    if len(msg.Text) > len("/forward_start") {
+        rawText = strings.TrimSpace(msg.Text[len("/forward_start"):])
+    }
 
-		rawText := ""
-		if len(msg.Text) > len("/forward_start") {
-			rawText = strings.TrimSpace(msg.Text[len("/forward_start"):])
-		}
-		title := rawText
-		tags := ""
-		firstHashIndex := strings.Index(rawText, "#")
-		if firstHashIndex != -1 {
-			title = strings.TrimSpace(rawText[:firstHashIndex])
-			tags = strings.TrimSpace(rawText[firstHashIndex:])
-		}
+    title := ""
+    artist := ""
+    tags := ""
+
+    // 分割：最多3部分（标题|艺术家|#标签）
+    parts := strings.Fields(rawText)
+    if len(parts) > 0 {
+        title = parts[0]
+    }
+    if len(parts) > 1 {
+        artist = parts[1]
+    }
+    if len(parts) > 2 {
+        // 从第3个开始拼接成标签（支持多词标签）
+        tags = strings.Join(parts[2:], " ")
+    } else {
+          // 兼容旧格式：如果没有艺术家，只有标题#标签
+        firstHashIndex := strings.Index(rawText, "#")
+        if firstHashIndex != -1 {
+            title = strings.TrimSpace(rawText[:firstHashIndex])
+            tags = strings.TrimSpace(rawText[firstHashIndex:])
+        }
+    }
+
 
 		// 初始化状态
 		h.mu.Lock()
@@ -314,6 +333,7 @@ func (h *BotHandler) handleForwardStart(ctx context.Context, b *bot.Bot, update 
 		h.ForwardBaseID = fmt.Sprintf("manual_%d", msg.ID)
 		h.ForwardIndex = 0
 		h.ForwardTitle = title
+		h.ForwardArtist = artist
 		h.ForwardTags = tags
 		h.CurrentPreview = nil
 		h.CurrentOriginal = nil
@@ -337,6 +357,7 @@ func (h *BotHandler) publishCurrentItem(ctx context.Context, b *bot.Bot, chatID 
 	baseID := h.ForwardBaseID
 	index := h.ForwardIndex
 	title := h.ForwardTitle
+	artist := h.ForwardArtist
 	tags := h.ForwardTags
 	h.mu.RUnlock()
 
@@ -351,7 +372,10 @@ func (h *BotHandler) publishCurrentItem(ctx context.Context, b *bot.Bot, chatID 
 	if caption == "" {
 		caption = "MtcACG:TG"
 	}
-	caption = fmt.Sprintf("%s [P%d]", caption, index)
+	if artist != "" {
+       caption += fmt.Sprintf("\nArtist: %s", artist)  // 🔴 新增
+    }
+	caption = fmt.Sprintf("%s [P%d]", caption, index+1)
 	if tags != "" {
 		caption = caption + "\n" + tags
 	}
@@ -415,7 +439,7 @@ func (h *BotHandler) publishCurrentItem(ctx context.Context, b *bot.Bot, chatID 
 	}
 
 	// 存入数据库
-	err := h.DB.SaveImage(postID, previewFileID, originFileID, caption, dbTags, "TG-Forward", width, height)
+	err := h.DB.SaveImage(postID, previewFileID, originFileID, caption, artist, dbTags, "TG-Forward", width, height)
 	if err != nil {
 		log.Printf("❌ P%d DB Save Failed: %v", index, err)
 		b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: "❌ 糟了！数据库保存失败，流程暂停。喵呜(^x_x^)"})
@@ -434,6 +458,7 @@ func (h *BotHandler) handleForwardContinue(ctx context.Context, b *bot.Bot, upda
 			h.mu.RUnlock()
 			return
 		}
+		artist := h.ForwardArtist
 		h.mu.RUnlock()
 		chatID := update.Message.Chat.ID
 
@@ -488,6 +513,7 @@ func (h *BotHandler) handleForwardEnd(ctx context.Context, b *bot.Bot, update *m
 		h.CurrentPreview = nil
 		h.CurrentOriginal = nil
 		h.ForwardTitle = ""
+		h.ForwardArtist = ""
 		h.ForwardTags = ""
 		h.mu.Unlock()
 
@@ -583,7 +609,7 @@ func (h *BotHandler) handlePixivLink(ctx context.Context, b *bot.Bot, update *mo
 				skippedCount++
 				continue
 			}
-			h.ProcessAndSend(bgCtx, imgData, pid, illust.Tags, caption, "pixiv", page.Width, page.Height)
+			h.ProcessAndSend(bgCtx, imgData, pid, illust.Tags, caption, illust.Artist, "pixiv", page.Width, page.Height)
 			successCount++
 			time.Sleep(1 * time.Second)
 		}
@@ -655,7 +681,7 @@ func (h *BotHandler) handleManyacgLink(ctx context.Context, b *bot.Bot, update *
 				continue
 			}
 
-			h.ProcessAndSend(bgCtx, imgData, pid, manyacg.FormatTags(artwork.Tags), caption, "manyacg", pic.Width, pic.Height)
+			h.ProcessAndSend(bgCtx, imgData, pid, manyacg.FormatTags(artwork.Tags), caption, artwork.Artist, "manyacg", pic.Width, pic.Height)
 			successCount++
 			time.Sleep(1 * time.Second)
 		}
@@ -737,7 +763,7 @@ func (h *BotHandler) handleYandeLink(ctx context.Context, b *bot.Bot, update *mo
 		caption := fmt.Sprintf("Yande: %d\nSize: %dx%d\nTags: #%s",
 			post.ID, post.Width, post.Height, tags)
 
-		h.ProcessAndSend(bgCtx, imgData, pid, post.Tags, caption, "yande", post.Width, post.Height)
+		h.ProcessAndSend(bgCtx, imgData, pid, post.Tags, caption, "Yande artist", "yande", post.Width, post.Height)
 
 		if loadingMsg != nil {
 			b.DeleteMessage(bgCtx, &bot.DeleteMessageParams{
