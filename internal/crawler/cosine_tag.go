@@ -200,7 +200,7 @@ func StartCosineTag(ctx context.Context, cfg *config.Config, db *database.D1Clie
 						sendID := dbKey + finalExt
 
 						// 发送
-						botHandler.ProcessAndSend(ctx, imgData, sendID, strings.Join(img.Tags, " "), caption, "pixiv", img.Width, img.Height)
+						botHandler.ProcessAndSend(ctx, imgData, sendID, strings.Join(img.Tags, " "), caption, img.Author, "pixiv", img.Width, img.Height)
                         
                         // 存库 (存标准 Key，无后缀)
                         // 注意：显式调用 PushHistory，防止 ProcessAndSend 没存对
