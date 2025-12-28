@@ -186,7 +186,7 @@ func processSingleImage(ctx context.Context, client *resty.Client, post YandePos
 	pid := fmt.Sprintf("yande_%d", post.ID)
 	caption := fmt.Sprintf("Yande: %d\nTags: #%s", post.ID, strings.ReplaceAll(post.Tags, " ", " #"))
 
-	botHandler.ProcessAndSend(ctx, imgResp.Body(), pid, post.Tags, caption, "yande", post.Width, post.Height)
+	botHandler.ProcessAndSend(ctx, imgResp.Body(), pid, post.Tags, caption, "Yande artist", "yande", post.Width, post.Height)
 }
 
 // 修改 ID 生成逻辑
@@ -214,7 +214,7 @@ func processMediaGroup(ctx context.Context, client *resty.Client, posts []YandeP
 
 		pid := fmt.Sprintf("yande_%d_p%d", parentID, i)
 
-		botHandler.ProcessAndSend(ctx, imgResp.Body(), pid, p.Tags, caption, "yande", p.Width, p.Height)
+		botHandler.ProcessAndSend(ctx, imgResp.Body(), pid, p.Tags, caption, "Yande artist", "yande", p.Width, p.Height)
 		time.Sleep(1 * time.Second)
 	}
 }
